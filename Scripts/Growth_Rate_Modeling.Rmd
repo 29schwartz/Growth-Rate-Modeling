@@ -68,21 +68,6 @@ plate1 %<>%
   
 ```
 
-```{r growth categorization}
-#this is for categorizing Liz's variants because some of them didn't grow!
-#If they had a .5OD by the end of the experiment I didn't even try to fit the model to them because it would break!
-
-for (i in 1:nrow(by_variant)) {
-  if (max(by_variant$data[[i]][[2]]) > .75 ){
-    by_variant$Growth[i] <- "Growth"
-  } else if (max(by_variant$data[[i]][[2]]) <= .75 & max(by_variant$data[[i]][[2]]) > .5) {
-    by_variant$Growth[i] <- "Inhibited"
-  } else {
-    by_variant$Growth[i] <- "Minimal"
-  }
-}
-```
-
 ## Max and Min OD Graphs
 
 ```{r fig.height = 6, fig.width = 8}
