@@ -1,0 +1,694 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r load and install packages}
+# Packages To Install -----------------------------------------------------
+source("../Functions/Load_Packages.R")
+```
+
+```{r load thematic elements}
+# thematic elements -----------------------------------------------------
+source("../Functions/SKS_Personal_Theme.R")
+```
+
+## Loading Data
+
+```{r}
+
+#using the flopr package to wrangle TECAN Spark data. See flopr on github for more info!
+#' @param data_csv needs to be the raw TECAN data in CSV form!
+#' @param layout_csv needs to be filled in according to the example layout.
+#'    you can add as many columns as you want BUT THE LAST COLUMN MUST BE named 'well' and have the position for each well such as 'A1'
+
+plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Example_Data.csv",
+                                     layout_csv = "../Data/Metadata.csv",
+                                     timeseries = TRUE))
+
+#Change time if necessary! I am changing from seconds to hours!
+plate1 %<>%
+  mutate(across(time, ~.x / 3600))
+
+
+
+#this is if you need to use multiple plates for your analysis!
+
+#readydata <- plate1 %>%
+ # full_join(plate2) %>%
+  #Wrangling data to make plots more easy to read.
+  #mutate(across(Plasmid, str_replace, 'pLW003', 'ev')) %>%
+  #mutate(across(Plasmid, str_replace, 'pLW002', '+SIR')) %>%
+  #mutate(Variant = Plasmid)
+  
+
+#rm(plate1); rm(plate2)
+```
+
+## Nesting Data
+
+```{r}
+#' @concept This is creating a nested data frame. The main difference between a nested data frame 
+#and grouped data frame is that for a grouped data frame, each row is an observation.
+#For a nested data frame each row is a group of observations!
+
+#This will allow us to easily apply function/models across all the data available. 
+#Using Tidymodels we can then easily organize the coefficients for our different models!
+
+#the across function allows for selecting specific columns! I want the default time column and I want any column that has the word OD in it in case someone uses multiple ODs for flourescent proteins! 
+
+plate1 %<>%
+  select(-c(well, row, column)) %>%
+  group_by(across(-c(time, contains("OD")))) %>%
+  nest()
+  
+```
+
+```{r growth categorization}
+#this is for categorizing Liz's variants because some of them didn't grow!
+#If they had a .5OD by the end of the experiment I didn't even try to fit the model to them because it would break!
+
+for (i in 1:nrow(by_variant)) {
+  if (max(by_variant$data[[i]][[2]]) > .75 ){
+    by_variant$Growth[i] <- "Growth"
+  } else if (max(by_variant$data[[i]][[2]]) <= .75 & max(by_variant$data[[i]][[2]]) > .5) {
+    by_variant$Growth[i] <- "Inhibited"
+  } else {
+    by_variant$Growth[i] <- "Minimal"
+  }
+}
+```
+
+## Max and Min OD Graphs
+
+```{r fig.height = 6, fig.width = 8}
+p <- readydata %>%
+  filter(Plate == 1 & Inducer == "4-HT") %>%
+  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
+  geom_point() +
+  labs(title = "4-HT condition") +
+  ggthemes::scale_color_colorblind() +
+  Theme
+
+q <- readydata %>%
+  filter(Plate == 1 & Inducer == "DMSO") %>%
+  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
+  geom_point() +
+  labs(title = "DMSO condition") +
+  ggthemes::scale_color_colorblind() +
+  Theme
+
+ggarrange(p,q, common.legend = TRUE)
+
+#looks like everything besides negative and DV41 looks like it may be increasing over time.
+#Also looks like the positive control pLW002 has peak OD at 17 hours. Therefore, I will cut all values off for other data.
+```
+```{r, fig.height = 6, fig.width = 8}
+w <-readydata %>%
+  filter(Plate == 2 & Inducer == "4-HT") %>%
+  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
+  geom_point() +
+  labs(title = "4-HT condition") +
+  ggthemes::scale_color_colorblind() +
+  Theme
+
+z <-readydata %>%
+  filter(Plate == 2 & Inducer == "DMSO") %>%
+  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
+  geom_point() +
+  labs(title = "DMSO condition") +
+  ggthemes::scale_color_colorblind() +
+  Theme
+
+ggarrange(w,z, common.legend = TRUE)
+
+#looks like everything besides negative and DV41 looks like it may be increasing over time.
+#Also looks like the positive control pLW002 has peak OD at 17 hours. Therefore, I will cut all values off for other data.
+```
+
+```{r}
+#This loop finds the max OD for each column. Then based off it's index removes all rows an hour past the maximum. This is to ensure that the maximum has actually occurred and the stationary phase of growth is evident for the model.
+
+for (i in 1:nrow(by_variant)) {
+  holder <- by_variant$data[[i]]
+  
+  max_OD <- which.max(holder$OD600)
+  
+  holder[1:(max_OD + 6),] -> by_variant$data[[i]]
+  
+  rm(holder)
+  
+  rm(max_OD)
+  
+}
+```
+
+```{r}
+#Calculating the min and maximum OD for all positive controls
+readydata %>% 
+  filter(Plasmid == "+SIR") %>%
+  group_by(Replicate, Inducer, Plate) %>%
+  slice_max(OD600, n = 1) -> pos_max_OD
+
+#Summarizing with average OD max time
+#mean is 15.00 hours.
+pos_max_OD %>%
+  pull(time) %>%
+  mean() -> time_max
+
+#Finding max OD based on when the positive controls hit their maximum.
+readydata %>%
+  select(!c("well", "row", "column")) %>%
+  group_by(Plasmid, Replicate,Inducer, Plate, Type) %>%
+  mutate(across(time, round, 2)) %>%
+filter(time > 15.00 & time < 15.1) %>%
+  slice_max(OD600, n = 1) %>%
+  ungroup() -> max_OD
+
+```
+
+```{r}
+#Calculating fold change between variants in 4-HT and DMSO
+max_OD %>%
+  pivot_wider(names_from = Inducer, values_from = c(time, OD600)) %>%
+  mutate(OD_fold = (`OD600_4-HT` - OD600_DMSO)/OD600_DMSO) %>%
+  group_by(Plasmid) %>%
+  summarize(mean_OD_fold = round(mean(OD_fold),3)) %>%
+  select(Plasmid,mean_OD_fold) %>%
+  ungroup() -> fold_changes
+
+max_OD %<>% 
+  left_join(fold_changes)
+
+```
+
+```{r fig.height= 12, fig.width = 14}
+p <- max_OD %>%
+  filter(Plasmid == "+SIR" | Plasmid == "ev") %>%
+  ggplot(aes(x = Plasmid, y = OD600, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_text(aes(x = Plasmid, y = 1.9, label = paste('Delta', "==", mean_OD_fold)), parse = T, size = 5, check_overlap = T) +
+  geom_point(width = .4, position = position_dodge(width = .75), size = .75) +
+  geom_hline(yintercept = .05, linetype = 2, color = "black") +
+  geom_vline(xintercept = 1.5, color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, 2), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Controls", y = "") +
+  coord_flip() +
+  Theme + 
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 10),
+        axis.text.x = element_blank(),
+        axis.ticks.x= element_blank(),
+        axis.text.y = element_text(size = 8))
+
+q <- max_OD %>%
+  filter(Type == "Distal") %>%
+  ggplot(aes(x = Plasmid, y = OD600, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_text(aes(x = Plasmid, y = 1.9, label = paste('Delta', "==", mean_OD_fold)), parse = T, size = 5, check_overlap = T) +
+  geom_point(width = .4, position = position_dodge(width = .75), size = .75) +
+  geom_hline(yintercept = .05, linetype = 2, color = "black") +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, 2), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Distal", y = "") +
+  coord_flip() +
+  Theme +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 10),
+        axis.text.x = element_blank(),
+        axis.ticks.x= element_blank(),
+        axis.text.y = element_text(size = 8))
+
+w <- max_OD %>%
+  filter(Type == "Structural") %>%
+  ggplot(aes(x = Plasmid, y = OD600, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_text(aes(x = Plasmid, y = 1.9, label = paste('Delta', "==", mean_OD_fold)), parse = T, size = 5, check_overlap = T) +
+  geom_point(width = .4, position = position_dodge(width = .75), size = .75) +
+  geom_hline(yintercept = .05, linetype = 2, color = "black") +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, 2), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Structural", y = "") +
+  coord_flip() +
+  Theme +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 10),
+        axis.text.x = element_blank(),
+        axis.ticks.x= element_blank(),
+        axis.text.y = element_text(size = 8))
+
+z <- max_OD %>%
+  filter(Type == "Dynamic") %>%
+  ggplot(aes(x = Plasmid, y = OD600, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_text(aes(x = Plasmid, y = 1.9, label = paste('Delta', "==", mean_OD_fold)), parse = T, size = 5, check_overlap = T) +
+  geom_point(width = .4, position = position_dodge(width = .75), size = .75) +
+  geom_hline(yintercept = .05, linetype = 2, color = "black") +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, 2), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Dynamic", y = 'Absorbance at 15 hr ('~OD[600]~')') +
+  coord_flip() + 
+  Theme +
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.ticks.x=element_blank())
+
+layout <- "
+AAAAA
+BBBBB
+BBBBB
+CCCCC
+CCCCC
+DDDDD
+DDDDD"
+
+p / q / w / z / plot_layout(design = layout, guides = "collect") & theme(legend.position = 'top', 
+                                                                  legend.key.size = unit(.5, 'cm'),
+                                                                  plot.margin = unit(c(.1,.25,.1,.25), "cm"),
+                                                                  legend.text = element_text(size = 10), 
+                                                                  legend.title = element_text(size = 10),
+                                                                  panel.grid.major.y = element_blank(),
+                                                                  panel.grid.minor.y = element_blank())
+ggsave("Images/max_OD.jpg", width = 180, height = 185, units = c("mm"))
+```
+
+```{r}
+#clearing memory
+rm(p); rm(q); rm(w); rm(z); rm(max_OD)
+```
+
+## Fitting Positive Controls
+
+### Fitting 4-HT Positive Controls
+
+```{r Data Modelling and Summary Statistics 4-HT Positive Controls}
+
+source("Functions/Zwietering_Fitting_Functions.R")
+
+#fitting the positive controls-----------------------------------------------------
+
+positive_4HT_controls <- by_variant %>%
+  #Select positive variants
+  filter(Plasmid == "+SIR" & Inducer == "4-HT") %>%
+  #apply Zwietering model to the data
+  mutate(model = map(data, Zwietering.fit)) %>%
+  #Create summary of coefficients
+  mutate(summary = map(model, tidy)) %>%
+  #Get residuals for model that can be plotted on top in a ggplot object
+  mutate(augment = map(model, augment)) %>%
+  #Using Glance to get an idea of model fit 
+  mutate(model.fit = map(model, glance)) 
+
+```
+
+```{r plotting 4-HT controls, fig.height= 6, fig.width= 10}
+positive_4HT_controls %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = OD600)) + 
+  geom_point(size = 1.5) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Positive Controls") +
+  scale_x_continuous(limits=c(0, 17)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Plate ~ Replicate) +
+Theme
+
+```
+
+```{r unnesting for boxplotting of 4-HT controls coefficients}
+
+  positive_4HT_controls %<>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+
+```
+
+### Fitting DMSO Positive Controls
+
+```{r Data Modelling and Summary Statistics DMSO Positive Controls, fig.height= 10, fig.width= 12}
+
+source("Functions/Zwietering_Fitting_Functions.R")
+
+#fitting the positive controls-----------------------------------------------------
+
+positive_DMSO_controls <- by_variant %>%
+  #Select positive variants
+  filter(Plasmid == "+SIR" & Inducer == "DMSO") %>%
+  #apply Zwietering model to the data
+  mutate(model = map(data, Zwietering.fit)) %>%
+  #Create summary of coefficients
+  mutate(summary = map(model, tidy)) %>%
+  #Get residuals for model that can be plotted on top in a ggplot object
+  mutate(augment = map(model, augment)) %>%
+  #Using Glance to get an idea of model fit 
+  mutate(model.fit = map(model, glance)) 
+
+```
+
+```{r plotting DMSO Positive Controls, fig.height= 6, fig.width= 10}
+positive_DMSO_controls %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = OD600)) + 
+  geom_point(size = 1.5) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "DMSO Positive Controls") +
+  scale_x_continuous(limits=c(0, 22)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Plate ~ Replicate) +
+Theme
+
+```
+
+```{r unnesting for boxplotting of DMSO controls coefficient estimates}
+  positive_DMSO_controls %<>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+```
+
+## Investigating Difference in Growth Rate Between Positive Control Conditions
+
+```{r}
+#combining positive controls into one tibble
+positive_controls <- positive_4HT_controls %>% 
+  full_join(positive_DMSO_controls)
+
+rm(positive_4HT_controls); rm(positive_DMSO_controls)
+```
+
+```{r fig.height= 8, fig.width = 8}
+ggbetweenstats(
+  data = positive_controls,
+  x = Inducer,
+  y = estimate_mu
+)
+```
+
+```{r}
+#Seems to be a difference in maximum growth rate!
+#Therefore I need to proceed with caution and compare cultures to their respective positive controls.
+positive_controls %>%
+  infer::t_test(formula = estimate_mu ~ Inducer,
+              order = c("DMSO", "4-HT"),
+              alternative = "two-sided")
+```
+
+## Calculating Starting Parameters for Conditions
+
+```{r}
+#I calculated the means for the positive controls. These will be the provided starting parameters for the NLS.
+ 
+starting_parameters <- positive_controls %>%
+  group_by(Plasmid,Inducer) %>%
+  summarize(avg.estimate_A = mean(estimate_A),
+            avg.estimate_mu = mean(estimate_mu),
+            avg.estimate_lambda = mean(estimate_lambda),)
+
+starting_parameters
+
+HT_param <- starting_parameters %>%
+  slice(1) 
+ 
+DMSO_param <- starting_parameters %>%
+  slice(2)
+
+```
+## Variants that Grew 4-HT
+
+```{r Data Modelling and Summary Statistics 4-HT variants}
+
+source("Functions/Zwietering_Fitting_Functions.R")
+
+#fitting the positive controls-----------------------------------------------------
+
+Growth_4HT_Variants <- by_variant %>%
+  #Select positive variants
+  filter(Growth == "Growth" & Inducer == "4-HT" & Plasmid != "+SIR") %>%
+  #Can't have NAs in any of the columns!
+  nplyr::nest_drop_na(data) %>%
+  #apply Zwietering model to the data
+  mutate(model = map(data, ~Zwietering_A.fit(.x, HT_param))) %>%
+  #Create summary of coefficients
+  mutate(summary = map(model, tidy)) %>%
+  #Get residuals for model that can be plotted on top in a ggplot object
+  mutate(augment = map(model, augment)) %>%
+  #Using Glance to get an idea of model fit 
+  mutate(model.fit = map(model, glance)) 
+
+```
+
+```{r plotting 4-HT variants, fig.height= 14, fig.width= 16}
+Growth_4HT_Variants %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = OD600)) + 
+  geom_point(size = 1.5) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Variants that Grew") +
+  scale_x_continuous(limits=c(0, 16)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Plasmid ~ Replicate) +
+Theme
+
+```
+
+```{r unnesting for boxplotting of 4-HT variant coefficients}
+
+Growth_4HT_Variants %<>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+```
+
+## Variants that Grew DMSO
+
+```{r Data Modelling and Summary Statistics DMSO variants}
+
+source("Functions/Zwietering_Fitting_Functions.R")
+
+#fitting growth variants DMSO-----------------------------------------------------
+
+Growth_DMSO_Variants <- by_variant %>%
+  #Select positive variants
+  filter(Growth == "Growth", Inducer == "DMSO" & Plasmid != "+SIR") %>%
+  #Can't have NAs in any of the columns!
+  nplyr::nest_drop_na(data) %>%
+  #apply Zwietering model to the data
+  mutate(model = map(data, ~Zwietering_A.fit(.x, DMSO_param))) %>%
+  #Create summary of coefficients
+  mutate(summary = map(model, tidy)) %>%
+  #Get residuals for model that can be plotted on top in a ggplot object
+  mutate(augment = map(model, augment)) %>%
+  #Using Glance to get an idea of model fit 
+  mutate(model.fit = map(model, glance)) 
+
+```
+
+```{r plotting DMSO variants, fig.height= 10, fig.width= 12}
+Growth_DMSO_Variants %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = OD600)) + 
+  geom_point(size = 1.5) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Growth Variants") +
+  scale_x_continuous(limits=c(0, 17)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Plasmid ~ Replicate) +
+Theme
+
+```
+
+```{r unnesting for boxplotting of DMSO variant coefficients}
+
+  Growth_DMSO_Variants %<>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+
+```
+
+## Analyzing Variant Model Coefficients
+
+```{r combining growth variant data frames}
+fitted_growth_variants <- positive_controls %>%
+  select(!c(estimate_A, std.error_A, statistic_A, p.value_A)) %>%
+  full_join(Growth_4HT_Variants) %>%
+  full_join(Growth_DMSO_Variants)
+
+fitted_growth_variants %<>%
+  select(!model) %>%
+  modify_if(is.character, as.factor) %>%
+ungroup() %>%
+  mutate(Plasmid = Plasmid %>%
+           fct_relevel("+SIR")
+         )
+
+rm(positive_controls); rm(Growth_4HT_Variants); rm(Growth_DMSO)
+```
+
+## Investigating Dead Variants
+
+```{r}
+by_variant %>%
+  filter(Growth == "Minimal" | Growth == "Inhibited") %>%
+  nplyr::nest_drop_na(data) -> minimal_growth_variants
+```
+
+```{r}
+#Determining if a variant is dead. If the average absorbance over the last hour is less than .3 I am claiming the variant is dead.
+
+for (i in 1:nrow(minimal_growth_variants)) {
+  
+  OD_avg <- mean(tail(minimal_growth_variants$data[[i]][[2]], 6))
+  
+  if (OD_avg < .3 ) {
+    minimal_growth_variants$Growth[i] <- "Dead"
+  } else {
+    minimal_growth_variants$Growth[i] <- "Minimal Growth"
+  }
+}
+
+```
+
+```{r}
+minimal_growth_variants %>%
+  filter(Growth == "Dead") -> dead_variants
+
+minimal_growth_variants %>%
+  filter(Growth == "Minimal Growth") -> minimal_growth_variants
+```
+
+```{r fig.width= 12, fig.height= 12}
+minimal_growth_variants %>%
+ unnest(data) %>%
+  ggplot(aes(x = time, y = OD600)) + 
+  geom_point(size = 1.5) + 
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Dead Variants") +
+  scale_x_continuous(limits=c(0, 17)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Plasmid ~ Replicate) +
+Theme
+```
+
+```{r}
+ bingbong <- minimal_growth_variants %>% filter(Plasmid == "DV44" & Replicate == 1)
+```
+
+
+## Calculating Doubling Time from Minimal Growth Variants
+
+```{r}
+spl <- smooth.spline(x = holder$time, y= holder$OD600, df = 3)
+pred <- predict(spl)
+
+plot (holder$time, holder$OD600, log="xy")
+lines(pred, col="red")
+
+OD600.prime <- diff(holder$OD600)/diff(holder$time)
+pred.prime <- predict(spl, deriv=1)
+
+plot(OD600.prime)
+lines(pred.prime$y, col=2)
+```
+
+## Dealing with Dead Variants
+
+```{r}
+dead_variants %<>%
+  add_column(estimate_mu = 0)
+```
+
+```{r}
+fitted_growth_variants %<>%
+  select(c(Strain:data, Growth,estimate_mu))
+
+minimal_growth_variants %<>%
+  select(c(Strain:data, Growth,estimate_mu))
+```
+
+```{r}
+fitted_growth_variants %>%
+  full_join(minimal_growth_variants) %>%
+  full_join(dead_variants) -> mu_parameters
+
+```
+
+```{r boxplt comparing growth rates, fig.height= 12, fig.width = 14}
+
+p <- mu_parameters %>%
+  filter(Plasmid == "+ Control" | Plasmid == "- Control") %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(width = .4,position = position_dodge(width = .75)) +
+  geom_vline(xintercept = 1.5, color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Controls", y = "") +
+  coord_flip() +
+  Theme
+
+q <- mu_parameters %>%
+  filter(Type == "Distal") %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(width = .4,position = position_dodge(width = .75)) +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Distal", y = "") +
+  coord_flip() +
+  Theme
+
+w <- mu_parameters %>%
+  filter(Type == "Structural") %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(width = .4,position = position_dodge(width = .75)) +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Structural", y = "") +
+  coord_flip() +
+  Theme
+
+z <- mu_parameters %>%
+  filter(Type == "Dynamic") %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(width = .4, position = position_dodge(width = .75)) +
+  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
+  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
+  scale_fill_manual(values = c("#A9A9A9", "white")) +
+  labs(x = "Dynamic", y = 'Growth Rate ('~Hr^-1*')') +
+  coord_flip() +
+  Theme 
+
+layout <- "
+AAAAA
+BBBBB
+BBBBB
+CCCCC
+CCCCC
+DDDDD
+DDDDD"
+
+p / q / w / z / plot_layout(design = layout, guides = "collect") & theme(legend.position = 'top', 
+                                                                  legend.key.size = unit(1, 'cm'),
+                                                                  plot.margin = unit(c(.1,.25,.1,.25), "cm"),
+                                                                  legend.text = element_text(size = 18), 
+                                                                  legend.title = element_text(size = 18),
+                                                                  panel.grid.major.y = element_blank(),
+                                                                  panel.grid.minor.y = element_blank())
+
+ggsave("Images/fitted_Growth_Rates.jpg", width = 12, height = 12)
+```
+
+
+
+
