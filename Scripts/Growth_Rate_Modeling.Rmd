@@ -76,77 +76,7 @@ ggarrange(p,q, common.legend = TRUE)
 
 ```
 
-## Nesting Data
-
-```{r}
-#For model fitting to work you need to exclude the death phase. The model cannot account for the drop in optical density following stationary.
-
-#Therefore, I will filter the data before 15 hours
-
-plate1 %<>%
-  filter(time < 15)
-```
-
-
-```{r}
-#' @concept This is creating a nested data frame. The main difference between a nested data frame and grouped data frame is that for a grouped data frame, each row is an observation. For a nested data frame each row is a group of observations!
-
-#This will allow us to easily apply function/models across all the data available. 
-#Using Tidymodels we can then easily organize the coefficients for our different models!
-
-#the across function allows for selecting specific columns! I want the default time column and I want any column that has the word OD in it in case someone uses multiple ODs for flourescent proteins! 
-
-#THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
-
-plate1 %<>%
-  select(-c(well, row, column)) %>%
-  group_by(across(-c(time, contains("OD")))) %>%
-  nest()
-  
-```
-
-#looks like everything besides negative and DV41 looks like it may be increasing over time.
-#Also looks like the positive control pLW002 has peak OD at 17 hours. Therefore, I will cut all values off for other data.
-```
-```{r, fig.height = 6, fig.width = 8}
-w <-readydata %>%
-  filter(Plate == 2 & Inducer == "4-HT") %>%
-  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
-  geom_point() +
-  labs(title = "4-HT condition") +
-  ggthemes::scale_color_colorblind() +
-  Theme
-
-z <-readydata %>%
-  filter(Plate == 2 & Inducer == "DMSO") %>%
-  ggplot(aes(x = time, y = OD600, color = Plasmid)) +
-  geom_point() +
-  labs(title = "DMSO condition") +
-  ggthemes::scale_color_colorblind() +
-  Theme
-
-ggarrange(w,z, common.legend = TRUE)
-
-#looks like everything besides negative and DV41 looks like it may be increasing over time.
-#Also looks like the positive control pLW002 has peak OD at 17 hours. Therefore, I will cut all values off for other data.
-```
-
-```{r}
-#This loop finds the max OD for each column. Then based off it's index removes all rows an hour past the maximum. This is to ensure that the maximum has actually occurred and the stationary phase of growth is evident for the model.
-
-for (i in 1:nrow(by_variant)) {
-  holder <- by_variant$data[[i]]
-  
-  max_OD <- which.max(holder$OD600)
-  
-  holder[1:(max_OD + 6),] -> by_variant$data[[i]]
-  
-  rm(holder)
-  
-  rm(max_OD)
-  
-}
-```
+## Creating Max OD boxplot
 
 ```{r}
 #Calculating the min and maximum OD for all positive controls
@@ -185,6 +115,37 @@ max_OD %>%
 max_OD %<>% 
   left_join(fold_changes)
 
+```
+
+## Nesting Data
+
+```{r}
+#For model fitting to work you need to exclude the death phase. The model cannot account for the drop in optical density following stationary.
+
+#Therefore, I will filter the data before 15 hours.
+
+#IF YOU HAVE NEGATIVE CONTROLS YOU WILL NOT BE ABLE TO FIT GROWTH CURVES TO THEM
+
+plate1 %<>%
+  filter(time < 15)
+```
+
+
+```{r}
+#' @concept This is creating a nested data frame. The main difference between a nested data frame and grouped data frame is that for a grouped data frame, each row is an observation. For a nested data frame each row is a group of observations!
+
+#This will allow us to easily apply function/models across all the data available. 
+#Using Tidymodels we can then easily organize the coefficients for our different models!
+
+#the across function allows for selecting specific columns! I want the default time column and I want any column that has the word OD in it in case someone uses multiple ODs for flourescent proteins! 
+
+#THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
+
+plate1 %<>%
+  select(-c(well, row, column)) %>%
+  group_by(across(-c(time, contains("OD")))) %>%
+  nest()
+  
 ```
 
 ```{r fig.height= 12, fig.width = 14}
