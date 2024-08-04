@@ -10,7 +10,7 @@ required_Packages_Install <- c("patchwork",
                                "tidymodels",
                                "ggstatsplot",
                                "ggthemes",
-                               "nplyr")
+                               "DescTools")
 #If you already have the packages 
 #This code will avoid reloading the packages!
 for(Package in required_Packages_Install){
