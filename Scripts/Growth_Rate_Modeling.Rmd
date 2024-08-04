@@ -53,19 +53,27 @@ plate1 %<>%
 
 ### Quick visualization of data
 
+```{r}
+#Filtering just positive controls for easy example
+PosCtrl <- plate1 %<>%
+  filter(Type == "PosCtrl") %>%
+  
+  
+```
+
 ```{r fig.height = 6, fig.width = 8}
 #example of plotting raw data! I am only going to plot positive controls for this example!
 
-p <- plate1 %>%
-  filter(Type == "PosCtrl" & Inducer == "4-HT") %>%
+p <- PosCtrl %>%
+  filter(Inducer == "4-HT") %>%
   ggplot(aes(x = time, y = OD600, color = as.factor(Replicate))) +
   geom_point() +
   labs(title = "4-HT condition") +
   ggthemes::scale_color_colorblind() +
   Theme
 
-q <- plate1 %>%
-  filter(Type == "PosCtrl" & Inducer == "4-HT") %>%
+q <- PosCtrl %>%
+  filter(Inducer == "DMSO") %>%
   ggplot(aes(x = time, y = OD600, color = as.factor(Replicate))) +
   geom_point() +
   labs(title = "DMSO condition") +
@@ -80,25 +88,26 @@ ggarrange(p,q, common.legend = TRUE)
 
 ```{r}
 #Calculating the min and maximum OD for all positive controls
-readydata %>% 
-  filter(Plasmid == "+SIR") %>%
+PosCtrl %>% 
   group_by(Replicate, Inducer, Plate) %>%
   slice_max(OD600, n = 1) -> pos_max_OD
 
-#Summarizing with average OD max time
-#mean is 15.00 hours.
+#Finding the average time of max OD. This is what I will filter teh data by before I apply the model. Remember no death phase can be included in the model!
 pos_max_OD %>%
   pull(time) %>%
   mean() -> time_max
 
+#Now I will find the closest measured value from all the replicates using the Closest Function from the DescTools package!
+
+nearest_time <- round(Closest(PosCtrl$time, time_max ),2)
+
 #Finding max OD based on when the positive controls hit their maximum.
-readydata %>%
+PosCtrl %>%
   select(!c("well", "row", "column")) %>%
   group_by(Plasmid, Replicate,Inducer, Plate, Type) %>%
   mutate(across(time, round, 2)) %>%
-filter(time > 15.00 & time < 15.1) %>%
-  slice_max(OD600, n = 1) %>%
-  ungroup() -> max_OD
+  filter(time == nearest_time[[1]])
+
 
 ```
 
