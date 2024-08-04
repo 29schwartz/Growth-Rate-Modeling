@@ -163,7 +163,7 @@ rm(p); rm(q); rm(max_OD)
 #IF YOU HAVE NEGATIVE CONTROLS YOU WILL NOT BE ABLE TO FIT GROWTH CURVES TO THEM
 
 plate1 %<>%
-  filter(time < time_maxn)
+  filter(time < time_max)
 ```
 
 
@@ -177,7 +177,7 @@ plate1 %<>%
 
 #THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
 
-plate1 %<>%
+PosCtrl %<>%
   select(-c(well, row, column)) %>%
   group_by(across(-c(time, contains("OD")))) %>%
   nest()
@@ -192,9 +192,9 @@ plate1 %<>%
 
 source("../Functions/Zwietering_Fitting_Functions.R")
 
-#fitting the positive controls-----------------------------------------------------
+#fitting model and collecting coefficients
 
- PosCtrl %>%
+ PosCtrl %<>%
   #apply Zwietering model to the data
   mutate(model = map(data, Zwietering.fit)) %>%
   #Create summary of coefficients
@@ -207,7 +207,7 @@ source("../Functions/Zwietering_Fitting_Functions.R")
 ```
 
 ```{r plotting 4-HT controls, fig.height= 6, fig.width= 10}
-positive_4HT_controls %>%
+PosCtrl %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = OD600)) + 
   geom_point(size = 1.5) + 
@@ -222,76 +222,28 @@ Theme
 
 ```{r unnesting for boxplotting of 4-HT controls coefficients}
 
-  positive_4HT_controls %<>%
+PosCtrl %<>%
   unnest(summary) %>%
   pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
 
-```
-
-### Fitting DMSO Positive Controls
-
-```{r Data Modelling and Summary Statistics DMSO Positive Controls, fig.height= 10, fig.width= 12}
-
-source("Functions/Zwietering_Fitting_Functions.R")
-
-#fitting the positive controls-----------------------------------------------------
-
-positive_DMSO_controls <- by_variant %>%
-  #Select positive variants
-  filter(Plasmid == "+SIR" & Inducer == "DMSO") %>%
-  #apply Zwietering model to the data
-  mutate(model = map(data, Zwietering.fit)) %>%
-  #Create summary of coefficients
-  mutate(summary = map(model, tidy)) %>%
-  #Get residuals for model that can be plotted on top in a ggplot object
-  mutate(augment = map(model, augment)) %>%
-  #Using Glance to get an idea of model fit 
-  mutate(model.fit = map(model, glance)) 
-
-```
-
-```{r plotting DMSO Positive Controls, fig.height= 6, fig.width= 10}
-positive_DMSO_controls %>%
-  unnest(augment) %>%
-  ggplot(aes(x = time, y = OD600)) + 
-  geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "DMSO Positive Controls") +
-  scale_x_continuous(limits=c(0, 22)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
-  facet_wrap(Plate ~ Replicate) +
-Theme
-
-```
-
-```{r unnesting for boxplotting of DMSO controls coefficient estimates}
-  positive_DMSO_controls %<>%
-  unnest(summary) %>%
-  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
 ```
 
 ## Investigating Difference in Growth Rate Between Positive Control Conditions
 
 ```{r}
-#combining positive controls into one tibble
-positive_controls <- positive_4HT_controls %>% 
-  full_join(positive_DMSO_controls)
-
-rm(positive_4HT_controls); rm(positive_DMSO_controls)
-```
-
-```{r fig.height= 8, fig.width = 8}
+#Creating a boxplot to compare the positive controls in different media conditions.
+#Do you notice anything...?
 ggbetweenstats(
-  data = positive_controls,
+  data = PosCtrl,
   x = Inducer,
   y = estimate_mu
 )
 ```
 
 ```{r}
-#Seems to be a difference in maximum growth rate!
+#Seems to be a difference in maximum growth rate! Based on my T-test!
 #Therefore I need to proceed with caution and compare cultures to their respective positive controls.
-positive_controls %>%
+PosCtrl %>%
   infer::t_test(formula = estimate_mu ~ Inducer,
               order = c("DMSO", "4-HT"),
               alternative = "two-sided")
@@ -300,9 +252,9 @@ positive_controls %>%
 ## Calculating Starting Parameters for Conditions
 
 ```{r}
-#I calculated the means for the positive controls. These will be the provided starting parameters for the NLS.
+#I calculated the means for the positive controls by condition. You can use these parameters for the Zwietering_A.fit model if you want to threshold the max OD for your experimental trials!
  
-starting_parameters <- positive_controls %>%
+starting_parameters <- PosCtrl %>%
   group_by(Plasmid,Inducer) %>%
   summarize(avg.estimate_A = mean(estimate_A),
             avg.estimate_mu = mean(estimate_mu),
@@ -317,100 +269,12 @@ DMSO_param <- starting_parameters %>%
   slice(2)
 
 ```
-## Variants that Grew 4-HT
-
-```{r Data Modelling and Summary Statistics 4-HT variants}
-
-source("Functions/Zwietering_Fitting_Functions.R")
-
-#fitting the positive controls-----------------------------------------------------
-
-Growth_4HT_Variants <- by_variant %>%
-  #Select positive variants
-  filter(Growth == "Growth" & Inducer == "4-HT" & Plasmid != "+SIR") %>%
-  #Can't have NAs in any of the columns!
-  nplyr::nest_drop_na(data) %>%
-  #apply Zwietering model to the data
-  mutate(model = map(data, ~Zwietering_A.fit(.x, HT_param))) %>%
-  #Create summary of coefficients
-  mutate(summary = map(model, tidy)) %>%
-  #Get residuals for model that can be plotted on top in a ggplot object
-  mutate(augment = map(model, augment)) %>%
-  #Using Glance to get an idea of model fit 
-  mutate(model.fit = map(model, glance)) 
-
-```
-
-```{r plotting 4-HT variants, fig.height= 14, fig.width= 16}
-Growth_4HT_Variants %>%
-  unnest(augment) %>%
-  ggplot(aes(x = time, y = OD600)) + 
-  geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Variants that Grew") +
-  scale_x_continuous(limits=c(0, 16)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
-  facet_wrap(Plasmid ~ Replicate) +
-Theme
-
-```
-
-```{r unnesting for boxplotting of 4-HT variant coefficients}
-
-Growth_4HT_Variants %<>%
-  unnest(summary) %>%
-  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
-```
-
-## Variants that Grew DMSO
-
-```{r Data Modelling and Summary Statistics DMSO variants}
-
-source("Functions/Zwietering_Fitting_Functions.R")
-
-#fitting growth variants DMSO-----------------------------------------------------
-
-Growth_DMSO_Variants <- by_variant %>%
-  #Select positive variants
-  filter(Growth == "Growth", Inducer == "DMSO" & Plasmid != "+SIR") %>%
-  #Can't have NAs in any of the columns!
-  nplyr::nest_drop_na(data) %>%
-  #apply Zwietering model to the data
-  mutate(model = map(data, ~Zwietering_A.fit(.x, DMSO_param))) %>%
-  #Create summary of coefficients
-  mutate(summary = map(model, tidy)) %>%
-  #Get residuals for model that can be plotted on top in a ggplot object
-  mutate(augment = map(model, augment)) %>%
-  #Using Glance to get an idea of model fit 
-  mutate(model.fit = map(model, glance)) 
-
-```
-
-```{r plotting DMSO variants, fig.height= 10, fig.width= 12}
-Growth_DMSO_Variants %>%
-  unnest(augment) %>%
-  ggplot(aes(x = time, y = OD600)) + 
-  geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Growth Variants") +
-  scale_x_continuous(limits=c(0, 17)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
-  facet_wrap(Plasmid ~ Replicate) +
-Theme
-
-```
-
-```{r unnesting for boxplotting of DMSO variant coefficients}
-
-  Growth_DMSO_Variants %<>%
-  unnest(summary) %>%
-  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
-
-```
 
 ## Analyzing Variant Model Coefficients
 
-```{r combining growth variant data frames}
+```{r combining growth variant data frames, eval=FALSE, include=FALSE}
+
+#this code chunk could be useful for comparing coefficients between groups! I currently have it not running but you can remove the eval=FALSE to run it!
 fitted_growth_variants <- positive_controls %>%
   select(!c(estimate_A, std.error_A, statistic_A, p.value_A)) %>%
   full_join(Growth_4HT_Variants) %>%
@@ -426,164 +290,4 @@ ungroup() %>%
 
 rm(positive_controls); rm(Growth_4HT_Variants); rm(Growth_DMSO)
 ```
-
-## Investigating Dead Variants
-
-```{r}
-by_variant %>%
-  filter(Growth == "Minimal" | Growth == "Inhibited") %>%
-  nplyr::nest_drop_na(data) -> minimal_growth_variants
-```
-
-```{r}
-#Determining if a variant is dead. If the average absorbance over the last hour is less than .3 I am claiming the variant is dead.
-
-for (i in 1:nrow(minimal_growth_variants)) {
-  
-  OD_avg <- mean(tail(minimal_growth_variants$data[[i]][[2]], 6))
-  
-  if (OD_avg < .3 ) {
-    minimal_growth_variants$Growth[i] <- "Dead"
-  } else {
-    minimal_growth_variants$Growth[i] <- "Minimal Growth"
-  }
-}
-
-```
-
-```{r}
-minimal_growth_variants %>%
-  filter(Growth == "Dead") -> dead_variants
-
-minimal_growth_variants %>%
-  filter(Growth == "Minimal Growth") -> minimal_growth_variants
-```
-
-```{r fig.width= 12, fig.height= 12}
-minimal_growth_variants %>%
- unnest(data) %>%
-  ggplot(aes(x = time, y = OD600)) + 
-  geom_point(size = 1.5) + 
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Dead Variants") +
-  scale_x_continuous(limits=c(0, 17)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
-  facet_wrap(Plasmid ~ Replicate) +
-Theme
-```
-
-```{r}
- bingbong <- minimal_growth_variants %>% filter(Plasmid == "DV44" & Replicate == 1)
-```
-
-
-## Calculating Doubling Time from Minimal Growth Variants
-
-```{r}
-spl <- smooth.spline(x = holder$time, y= holder$OD600, df = 3)
-pred <- predict(spl)
-
-plot (holder$time, holder$OD600, log="xy")
-lines(pred, col="red")
-
-OD600.prime <- diff(holder$OD600)/diff(holder$time)
-pred.prime <- predict(spl, deriv=1)
-
-plot(OD600.prime)
-lines(pred.prime$y, col=2)
-```
-
-## Dealing with Dead Variants
-
-```{r}
-dead_variants %<>%
-  add_column(estimate_mu = 0)
-```
-
-```{r}
-fitted_growth_variants %<>%
-  select(c(Strain:data, Growth,estimate_mu))
-
-minimal_growth_variants %<>%
-  select(c(Strain:data, Growth,estimate_mu))
-```
-
-```{r}
-fitted_growth_variants %>%
-  full_join(minimal_growth_variants) %>%
-  full_join(dead_variants) -> mu_parameters
-
-```
-
-```{r boxplt comparing growth rates, fig.height= 12, fig.width = 14}
-
-p <- mu_parameters %>%
-  filter(Plasmid == "+ Control" | Plasmid == "- Control") %>%
-  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_point(width = .4,position = position_dodge(width = .75)) +
-  geom_vline(xintercept = 1.5, color = "#C0C0C0", size = 1) +
-  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
-  scale_fill_manual(values = c("#A9A9A9", "white")) +
-  labs(x = "Controls", y = "") +
-  coord_flip() +
-  Theme
-
-q <- mu_parameters %>%
-  filter(Type == "Distal") %>%
-  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_point(width = .4,position = position_dodge(width = .75)) +
-  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
-  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
-  scale_fill_manual(values = c("#A9A9A9", "white")) +
-  labs(x = "Distal", y = "") +
-  coord_flip() +
-  Theme
-
-w <- mu_parameters %>%
-  filter(Type == "Structural") %>%
-  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_point(width = .4,position = position_dodge(width = .75)) +
-  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
-  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
-  scale_fill_manual(values = c("#A9A9A9", "white")) +
-  labs(x = "Structural", y = "") +
-  coord_flip() +
-  Theme
-
-z <- mu_parameters %>%
-  filter(Type == "Dynamic") %>%
-  ggplot(aes(x = Plasmid, y = estimate_mu, fill = Inducer)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_point(width = .4, position = position_dodge(width = .75)) +
-  geom_vline(xintercept = c(1.5,2.5,3.5), color = "#C0C0C0", size = 1) +
-  scale_y_continuous(limits=c(0, .25), n.breaks = 10) +
-  scale_fill_manual(values = c("#A9A9A9", "white")) +
-  labs(x = "Dynamic", y = 'Growth Rate ('~Hr^-1*')') +
-  coord_flip() +
-  Theme 
-
-layout <- "
-AAAAA
-BBBBB
-BBBBB
-CCCCC
-CCCCC
-DDDDD
-DDDDD"
-
-p / q / w / z / plot_layout(design = layout, guides = "collect") & theme(legend.position = 'top', 
-                                                                  legend.key.size = unit(1, 'cm'),
-                                                                  plot.margin = unit(c(.1,.25,.1,.25), "cm"),
-                                                                  legend.text = element_text(size = 18), 
-                                                                  legend.title = element_text(size = 18),
-                                                                  panel.grid.major.y = element_blank(),
-                                                                  panel.grid.minor.y = element_blank())
-
-ggsave("Images/fitted_Growth_Rates.jpg", width = 12, height = 12)
-```
-
-
-
 
