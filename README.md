@@ -9,7 +9,7 @@ I have example data in the Data folder ( _See Example_Data.csv_ ), an example Me
 
 ## Running Experiments and Saving Data for script compatibility!
 
-The **logger software** provided by Unisense (found on the computer next to the electrode) is necessary for capturing raw data from your experiment. The software gives options for recording data (play button), stopping recording (stop button), and exporting data. **I highly recommend to create a new folder for each experiment.** Inside the folder you can save all of your trails.
+The software provided by the TECAN is fully compatible with the script. However, for each wavelength you measure you **MUST** include the letters "OD" ( _e.g.OD600, OD444_ ) in it's name. TECAN software will auto-label the name of the channel "label 1" by default. This is because the script will parse all channels that have the word OD in it and use this column for fitting!
 
 When using the logger software, it is critical you hit the start button before the experimental trail, then following its completion hit the pause button. Then hit export graph to save the data. **You must save the data as a .xlsx**. You should be able to save each trail individually within the folder you created. 
 
