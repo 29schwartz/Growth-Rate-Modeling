@@ -1,21 +1,21 @@
 # Growth-Rate-Modeling Repository Overview
 This is for taking spark TECAN Data calculating Growth Rates!
 
-Repository includes functions to automatically wrangle **.csv** files from a TECAN Spark plate reader! Further you can apply growth rate models to your data using the default growth rate function from [ _Zwietering et al._ ](https://doi.org/10.1128/aem.56.6.1875-1881.1990). You could also manually provide your own! 
+Repository includes functions to automatically wrangle **.csv** files from a TECAN Spark plate reader and add important metadata ( _i.e_ plasmid, condition, replicate, _etc._ )! Further you can apply growth rate models to your data using the default growth rate function from [ _Zwietering et al._ ](https://doi.org/10.1128/aem.56.6.1875-1881.1990). You could also manually provide your own! 
 
 The output of the models with give the $\$alpha$, $\lambda$, and $\mu$ coefficients. The derivations for where these come from are described in the aforementioned paper, but in short the $\alpha$ is the horizontal asymptote (max OD), the $\lambda$ is the lag time ( _i.e._ the time it takes for the culture to reach exponential), and the $\mu$ which is equivalent to the growth rate. From the growth rate you can calculate the doubling time! The units for these different model coefficients are OD, hours, and $hours^{-1}$, respectively.
 
-I have example data in the Data folder ( _See Example_Data.csv_ ), an example Metadata file ( _See Metadata.csv_ ) and example script ( _Growth_Rate_Modeling.Rmd_.)
+I have example data in the Data folder ( _See Example_Data.csv_ ), an example Metadata file ( _See Metadata.csv_ ) and example script ( _Growth_Rate_Modeling.Rmd_.) Feel free to download the example metadata file and reuse it!
 
 ## Running Experiments and Saving Data for script compatibility!
 
-The software provided by the TECAN is fully compatible with the script. However, for each wavelength you measure you **MUST** include the letters "OD" ( _e.g.OD600, OD444_ ) in it's name. TECAN software will auto-label the name of the channel "label 1" by default. This is because the script will parse all channels that have the word OD in it and use this column for fitting!
+The software provided by the TECAN is fully compatible with the script. However, for each wavelength you measure you **MUST** include the letters "OD" ( _e.g.OD600, OD444_ ) in it's name. TECAN software will auto-label the name of the channel "label 1" by default. This is because the script will parse all channels that have the word OD in it and use this column for plotting!
 
-When using the logger software, it is critical you hit the start button before the experimental trail, then following its completion hit the pause button. Then hit export graph to save the data. **You must save the data as a .xlsx**. You should be able to save each trail individually within the folder you created. 
+Also please **make sure to save your data** from the TECAN and metadata always as a _.csv_! Edit your metadata folder appropriately before you start running the script!
 
-Later when wrangling the data, all you will need to do is provide the path of the folder and the script should run smoothly! **Be aware that if you saved the _logger experiment, a .ulog_ You will need to remove it from the folder. I do not think it serves much purpose outside of when the experiment is actively running. 
+Later when wrangling the data, all you will need to do is provide the path of the data folder with your data and the metadata and the script should run smoothly!
 
-**Lastly, name each file with useful information! The file names will end up being split into new columns that give helpful metadata, like the plasmid you used, the dilution, and the replicate** I'll explain more below!
+Lastly the model fitting will not work with all data. **If you have negative controls that purposely aren't supposed to grow, you must filter them out because the model will not be able to fit a logistic curve to it!**
 
 ## Processing Workflow : Organization
 
@@ -23,19 +23,17 @@ Later when wrangling the data, all you will need to do is provide the path of th
 First make sure to download the entire repository. The _Load Packages_ function will install and or load all the necessary packages for this script. **You also won't have to change any of the code in source chunks!**
 
 ### 2 Load Data
-To load data, all you need to do is provide the full path to the directory of the file folder where the directory is in the first code chunk! For me, my data is a folder _29July24_ in the Data folder of the repository! The data can be anywhere however!
+To load data, all you need to do is provide the path to the directory of the file folder where the directory is in the first code chunk! If you downloaded the repository, it should work automatically! If not you may need to provide the full path.
 
 ### 3 Wrangle Data
 
-The _Sulfide Electrode Data Wrangle_ function will take the first sheet of the .xlsx file (the only one that is important) and first rename the columns to names that are more compatible with R. They will also add a column that is whatever you named your files. The individual files are then read into a list and are named whatever their file name is, besides the .xlsx!
+The [flopR package](https://github.com/ucl-cssb/flopr) was written by Alex J H Fedorec. This package will combine metadata in a very simple format with your complex OD data. You can have whatever you want in the metadata columns, but **the last column must be named well (lowercase) and have the matching wells to your data**.
 
-**The function will parse the names of each .xlsx based on _** You can go in to the function and manually change the names of the columns that will be created when the file name is parsed. 
+**The function will parse the metadata and raw data together with the spark_parse function!**
 
-_Example of a file name: SKS015_10X_PC_1 _ I have written the code to split this file name into four different columns: Plasmid, dilution factor, treatment, and replicate, respectively. This is very helpful for later plotting and is necessary for the function to work!
+#Plotting Raw Data
 
-### 4 Cleaning Data
-
-There is an optional chunk that is for if you have any trials that had a large amount of noise (values >600 $\mu$M sulfide) or the trial ran much longer than the rest of the files. You should can visualize what your data looks like with the first ggplot.
+Depending on what your goal is I have some code that will allow for plotting the raw data (always important) and finding the maximum OD for each condition. This may be a useful comparison with your data (or maybe not).
 
 ## Calculating Experimental Rates
 
@@ -45,6 +43,12 @@ If you are unfamiliar with the goal of nesting data I highly recommend checking 
 
 ### 2 Apply Models
 
-Once your data has been nested you will have a column with the time and sulfide concentration. Using the _slope determining_ function, it will calculate the slope for 25 seconds during the linear slope portion of the trial! The code will then organize the model coefficients via the broom package as well as produce a fitted curve to the data. The data can then be easily plotted with the fitted regression line or coefficients can be plotted and shown in a boxplot! You can see example outputs in the Images folder!
+Once you nest the data it should be pretty straightforward to calculate model coefficients using the map function! However, it is important to note the model will struggle to fit the data if you include in your data the death phase of the cell culture. Therefore, I usually cut the data off at 15 hours for _E. coli_ to minimize improper fitting. I always wrote code for determining the time of the average OD maximum across conditions and filtering out data that is greater than that time. Up to you! 
+
+### 3 Plotting Coefficients and Model Fits
+
+I then have a few code chunks that plot the model fits and unnest the model coefficients from the nested data frame. This are just example code chunks you may or may not want to use depending on your needs! 
+
+Happy Coding!
 
 
