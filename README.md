@@ -3,7 +3,7 @@ This is for taking spark TECAN Data calculating Growth Rates!
 
 Repository includes functions to automatically wrangle **.csv** files from a TECAN Spark plate reader and add important metadata ( _i.e_ plasmid, condition, replicate, _etc._ )! Further you can apply growth rate models to your data using the default growth rate function from [ _Zwietering et al._ ](https://doi.org/10.1128/aem.56.6.1875-1881.1990). You could also manually provide your own! 
 
-The output of the models with give the $\$alpha$, $\lambda$, and $\mu$ coefficients. The derivations for where these come from are described in the aforementioned paper, but in short the $\alpha$ is the horizontal asymptote (max OD), the $\lambda$ is the lag time ( _i.e._ the time it takes for the culture to reach exponential), and the $\mu$ which is equivalent to the growth rate. From the growth rate you can calculate the doubling time! The units for these different model coefficients are OD, hours, and $hours^{-1}$, respectively.
+The output of the models with give the $\alpha$, $\lambda$, and $\mu$ coefficients. The derivations for where these come from are described in the aforementioned paper, but in short the $\alpha$ is the horizontal asymptote (max OD), the $\lambda$ is the lag time ( _i.e._ the time it takes for the culture to reach exponential), and the $\mu$ which is equivalent to the growth rate. From the growth rate you can calculate the doubling time! The units for these different model coefficients are OD, hours, and $hours^{-1}$, respectively.
 
 I have example data in the Data folder ( _See Example_Data.csv_ ), an example Metadata file ( _See Metadata.csv_ ) and example script ( _Growth_Rate_Modeling.Rmd_.) Feel free to download the example metadata file and reuse it!
 
