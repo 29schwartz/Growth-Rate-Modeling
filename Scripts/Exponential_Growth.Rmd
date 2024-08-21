@@ -180,23 +180,17 @@ output %<>%
 
 ```
 
-```{r}
-output %>%
-  select(estimate_a, std.error_a,p.value_a, estimate_r, std.error_r, p.value_r)
-knitr::kable(output)
-```
-
-
 ## Investigating Difference in Growth Rate Between Positive Control Conditions
 
 ```{r}
-#Creating a boxplot to compare the positive controls in different media conditions.
-#Do you notice anything...?
-ggbetweenstats(
-  data = PosCtrl,
-  x = Inducer,
-  y = estimate_mu
-)
+#Creating a boxplot to compare the knockouts
+
+output %>%
+ggplot(aes(x= reorder(Plasmid, estimate_r, FUN = median), y = estimate_r)) + 
+    geom_boxplot() + 
+  labs(x = "Domain Insertion", y = "Rate Estimate") +
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  Theme
 ```
 
 ```{r}
@@ -229,24 +223,4 @@ DMSO_param <- starting_parameters %>%
 
 ```
 
-## Analyzing Variant Model Coefficients
-
-```{r combining growth variant data frames, eval=FALSE, include=FALSE}
-
-#this code chunk could be useful for comparing coefficients between groups! I currently have it not running but you can remove the eval=FALSE to run it!
-fitted_growth_variants <- positive_controls %>%
-  select(!c(estimate_A, std.error_A, statistic_A, p.value_A)) %>%
-  full_join(Growth_4HT_Variants) %>%
-  full_join(Growth_DMSO_Variants)
-
-fitted_growth_variants %<>%
-  select(!model) %>%
-  modify_if(is.character, as.factor) %>%
-ungroup() %>%
-  mutate(Plasmid = Plasmid %>%
-           fct_relevel("+SIR")
-         )
-
-rm(positive_controls); rm(Growth_4HT_Variants); rm(Growth_DMSO)
-```
 
