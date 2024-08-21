@@ -40,6 +40,7 @@ plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Albert_Data.csv",
 #Change time if necessary! I am changing from seconds to hours!
 plate1 %<>%
   mutate(across(time, ~.x / 3600)) %>%
+  mutate(across(Plasmid, str_replace, 'del', '')) %>%
   modify_if(is.character, as.factor) %>% 
   modify_at(c("Replicate"), as.factor)
 
@@ -190,6 +191,7 @@ ggplot(aes(x= reorder(Plasmid, estimate_r, FUN = median), y = estimate_r)) +
     geom_boxplot() + 
   labs(x = "Domain Insertion", y = "Rate Estimate") +
   scale_x_discrete(guide = guide_axis(angle = 90)) +
+  scale_y_continuous(limits=c(0, 7)) +
   Theme
 ```
 
