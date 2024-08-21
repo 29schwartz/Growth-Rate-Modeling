@@ -64,7 +64,7 @@ plate1 %<>%
 
 ```{r}
 #Filtering just positive controls for easy example
-PosCtrl <- plate1 %<>%
+PosCtrl <- plate1 %>%
   filter(Plasmid == "pJA018")
   
   
@@ -89,7 +89,7 @@ PosCtrl <- plate1 %<>%
 
 plate1 %<>%
   filter(OD562 <= 3.5) %>%
-  group_by(Replicate) %>%
+  group_by(Plasmid, Replicate) %>%
   mutate(OD562 = OD562 - min(OD562) + .0001)
 ```
 
@@ -105,7 +105,7 @@ plate1 %<>%
 ```
 
 
-```{r}
+```{r nest data}
 #' @concept This is creating a nested data frame. The main difference between a nested data frame and grouped data frame is that for a grouped data frame, each row is an observation. For a nested data frame each row is a group of observations!
 
 #This will allow us to easily apply function/models across all the data available. 
@@ -115,10 +115,10 @@ plate1 %<>%
 
 #THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
 
-plate1  %>%
+plate1 %<>%
   select(-c(well, row, column)) %>%
-  ungroup() %>%
-  nest(.by = any_of(c("Plasmid", "Replicate")))
+  group_by(across(-c(time, contains("OD")))) %>%
+  nest()
   
 ```
 
@@ -126,14 +126,15 @@ plate1  %>%
 
 ### Fitting Controls
 
-```{r Data Modelling and Summary Statistics 4-HT Positive Controls}
+```{r Data Modeling and Summary Statistics}
 
 source("../Functions/Exponential_Fit.R")
 
 #fitting model and collecting coefficients
 
  plate1 %>%
-  #apply Zwietering model to the data
+   filter(Strain != "Blank" & Plasmid != "pIC004") %>%
+  #apply Exponential model to the data
   mutate(model = map(data, Exponential_Fit)) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
@@ -148,12 +149,12 @@ source("../Functions/Exponential_Fit.R")
  output %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = OD562)) + 
-  geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  geom_point(size = 2) + 
+  geom_line(aes(y = .fitted, group = Replicate), color = "blue", size = 1) +
   labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Exponential Fit") +
   scale_x_continuous(limits=c(0, 3)) + 
   scale_y_continuous(limits=c(0, 3)) +
-  facet_wrap(~Replicate) +
+  facet_wrap(~Plasmid) +
 Theme
 
 ```
@@ -161,6 +162,7 @@ Theme
 ```{r}
  output %>%
   unnest(augment) %>%
+  filter(Plasmid == "del35-114") %>%
   ggplot(aes(x = time, y = .resid)) + 
   geom_point(size = 1.5) + 
   labs(y = "Residual" , x = "Timepoint (Hr)", title = "Residuals") +
