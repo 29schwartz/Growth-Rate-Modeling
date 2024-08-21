@@ -1,5 +1,6 @@
 #These are base packages I always use to run my code!
 required_Packages_Install <- c("patchwork",
+                               "latex2exp",
                                "splines",
                                "kableExtra",
                                "ggpubr", 
