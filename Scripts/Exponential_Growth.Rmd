@@ -39,7 +39,8 @@ plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Albert_Data.csv",
 
 #Change time if necessary! I am changing from seconds to hours!
 plate1 %<>%
-  mutate(across(time, ~.x / 3600))
+  mutate(across(time, ~.x / 3600)) %>%
+  modify_if(is.character, as.factor)
 
 
 
@@ -71,11 +72,10 @@ PosCtrl <- plate1 %<>%
 ```{r fig.height = 6, fig.width = 8}
 #example of plotting raw data! I am only going to plot positive controls for this example!
 
- PosCtrl %>%
-  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate))) +
+ plate1 %>%
+  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate), shape = Plasmid)) +
   geom_point() +
   labs(title = "Positive Control") + 
-  ggthemes::scale_color_colorblind() +
   Theme
 
 ```
@@ -131,7 +131,7 @@ source("../Functions/Exponential_Fit.R")
 
 #fitting model and collecting coefficients
 
- PosCtrl %<>%
+ PosCtrl %>%
   #apply Zwietering model to the data
   mutate(model = map(data, Exponential_Fit)) %>%
   #Create summary of coefficients
@@ -139,31 +139,50 @@ source("../Functions/Exponential_Fit.R")
   #Get residuals for model that can be plotted on top in a ggplot object
   mutate(augment = map(model, augment)) %>%
   #Using Glance to get an idea of model fit 
-  mutate(model.fit = map(model, glance))
+  mutate(model.fit = map(model, glance)) -> output
 
 ```
 
 ```{r plotting 4-HT controls, fig.height= 6, fig.width= 10}
-p <- PosCtrl %>%
+ output %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = OD562)) + 
   geom_point(size = 1.5) + 
   geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Positive Controls") +
-  scale_x_continuous(limits=c(0, 17)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Exponential Fit") +
+  scale_x_continuous(limits=c(0, 3)) + 
+  scale_y_continuous(limits=c(0, 3)) +
   facet_wrap(~Replicate) +
 Theme
 
 ```
 
+```{r}
+ output %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = .resid)) + 
+  geom_point(size = 1.5) + 
+  labs(y = "Residual" , x = "Timepoint (Hr)", title = "Residuals") +
+  scale_x_continuous(limits=c(0, 3)) + 
+  scale_y_continuous(limits=c(-.5, .5)) +
+  facet_wrap(~Replicate) +
+Theme
+```
+
 ```{r unnesting for boxplotting of 4-HT controls coefficients}
 
-PosCtrl %<>%
+output %<>%
   unnest(summary) %>%
   pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
 
 ```
+
+```{r}
+output %>%
+  select(estimate_a, std.error_a,p.value_a, estimate_r, std.error_r, p.value_r)
+knitr::kable(output)
+```
+
 
 ## Investigating Difference in Growth Rate Between Positive Control Conditions
 
