@@ -39,7 +39,9 @@ plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Example_Data.csv",
 
 #Change time if necessary! I am changing from seconds to hours!
 plate1 %<>%
-  mutate(across(time, ~.x / 3600))
+  mutate(across(time, ~.x / 3600)) %>%
+  modify_if(is.character, as.factor) %>% 
+  modify_at(c("Replicate"), as.factor)
 
 
 
@@ -73,7 +75,7 @@ PosCtrl <- plate1 %<>%
 
 p <- PosCtrl %>%
   filter(Inducer == "4-HT") %>%
-  ggplot(aes(x = time, y = OD600, color = as.factor(Replicate))) +
+  ggplot(aes(x = time, y = OD600, color = Replicate)) +
   geom_point() +
   labs(title = "4-HT condition") +
   ggthemes::scale_color_colorblind() +
@@ -81,7 +83,7 @@ p <- PosCtrl %>%
 
 q <- PosCtrl %>%
   filter(Inducer == "DMSO") %>%
-  ggplot(aes(x = time, y = OD600, color = as.factor(Replicate))) +
+  ggplot(aes(x = time, y = OD600, color = Replicate)) +
   geom_point() +
   labs(title = "DMSO condition") +
   ggthemes::scale_color_colorblind() +

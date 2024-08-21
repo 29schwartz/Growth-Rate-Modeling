@@ -40,7 +40,8 @@ plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Albert_Data.csv",
 #Change time if necessary! I am changing from seconds to hours!
 plate1 %<>%
   mutate(across(time, ~.x / 3600)) %>%
-  modify_if(is.character, as.factor)
+  modify_if(is.character, as.factor) %>% 
+  modify_at(c("Replicate"), as.factor)
 
 
 
@@ -86,15 +87,15 @@ PosCtrl <- plate1 %<>%
 #In this case it's best to filter the data less than three hours because the max value the plate reader can measure is an OD of 4 for OD_562. 
 #IF YOU HAVE NEGATIVE CONTROLS YOU WILL NOT BE ABLE TO FIT GROWTH CURVES TO THEM
 
-PosCtrl %<>%
+plate1 %<>%
   filter(OD562 <= 3.5) %>%
   group_by(Replicate) %>%
   mutate(OD562 = OD562 - min(OD562) + .0001)
 ```
 
 ```{r}
- PosCtrl %>%
-  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate))) +
+ plate1 %>%
+  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate), shape = Plasmid)) +
   geom_point() +
   labs(title = "Positive Control shifted to ~0", x = "Time (Hr)", y = "") +
   scale_x_continuous(limits=c(0, 3)) + 
@@ -114,10 +115,10 @@ PosCtrl %<>%
 
 #THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
 
-PosCtrl %<>%
+plate1  %>%
   select(-c(well, row, column)) %>%
-  group_by(across(-c(time, contains("OD")))) %>%
-  nest()
+  ungroup() %>%
+  nest(.by = any_of(c("Plasmid", "Replicate")))
   
 ```
 
@@ -131,7 +132,7 @@ source("../Functions/Exponential_Fit.R")
 
 #fitting model and collecting coefficients
 
- PosCtrl %>%
+ plate1 %>%
   #apply Zwietering model to the data
   mutate(model = map(data, Exponential_Fit)) %>%
   #Create summary of coefficients
