@@ -1,0 +1,230 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+#Only install these packages one time! Then either delete this chunk or comment it out!
+#install.packages("devtools")
+#devtools::install_github("ucl-cssb/flopr")
+```
+
+```{r load and other packages, include = FALSE}
+
+# Packages To Install -----------------------------------------------------
+source("../Functions/Load_Packages.R")
+```
+
+```{r load thematic elements}
+# thematic elements -----------------------------------------------------
+source("../Functions/SKS_Personal_Theme.R")
+```
+
+## Loading Data
+
+```{r}
+
+#using the flopr package to wrangle TECAN Spark data. See flopr on github for more info!
+#' @param data_csv needs to be the raw TECAN data in CSV form!
+#' @param layout_csv needs to be filled in according to the example layout.
+#'    you can add as many columns as you want BUT THE LAST COLUMN MUST BE named 'well' and have the position for each well such as 'A1'
+
+plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Albert_Data.csv",
+                                     layout_csv = "../Data/Albert_Metadata.csv",
+                                     timeseries = TRUE))
+
+#Change time if necessary! I am changing from seconds to hours!
+plate1 %<>%
+  mutate(across(time, ~.x / 3600))
+
+
+
+#this is if you need to use multiple plates for your analysis!
+
+#readydata <- plate1 %>%
+ # full_join(plate2) %>%
+  #Wrangling data to make plots more easy to read.
+  #mutate(across(Plasmid, str_replace, 'pLW003', 'ev')) %>%
+  #mutate(across(Plasmid, str_replace, 'pLW002', '+SIR')) %>%
+  #mutate(Variant = Plasmid)
+  
+
+#rm(plate1); rm(plate2)
+```
+
+## Max and Min OD Graphs
+
+### Quick visualization of data
+
+```{r}
+#Filtering just positive controls for easy example
+PosCtrl <- plate1 %<>%
+  filter(Plasmid == "pJA018")
+  
+  
+```
+
+```{r fig.height = 6, fig.width = 8}
+#example of plotting raw data! I am only going to plot positive controls for this example!
+
+ PosCtrl %>%
+  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate))) +
+  geom_point() +
+  labs(title = "Positive Control") + 
+  ggthemes::scale_color_colorblind() +
+  Theme
+
+```
+
+## Nesting Data
+
+```{r}
+#In this case it's best to filter the data less than three hours because the max value the plate reader can measure is an OD of 4 for OD_562. 
+#IF YOU HAVE NEGATIVE CONTROLS YOU WILL NOT BE ABLE TO FIT GROWTH CURVES TO THEM
+
+PosCtrl %<>%
+  filter(OD562 <= 3.5) %>%
+  group_by(Replicate) %>%
+  mutate(OD562 = OD562 - min(OD562) + .0001)
+```
+
+```{r}
+ PosCtrl %>%
+  ggplot(aes(x = time, y = OD562, color = as.factor(Replicate))) +
+  geom_point() +
+  labs(title = "Positive Control shifted to ~0", x = "Time (Hr)", y = "") +
+  scale_x_continuous(limits=c(0, 3)) + 
+  scale_y_continuous(limits=c(0, 3)) +
+  ggthemes::scale_color_colorblind() +
+  Theme
+```
+
+
+```{r}
+#' @concept This is creating a nested data frame. The main difference between a nested data frame and grouped data frame is that for a grouped data frame, each row is an observation. For a nested data frame each row is a group of observations!
+
+#This will allow us to easily apply function/models across all the data available. 
+#Using Tidymodels we can then easily organize the coefficients for our different models!
+
+#the across function allows for selecting specific columns! I want the default time column and I want any column that has the word OD in it in case someone uses multiple ODs for flourescent proteins! 
+
+#THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
+
+PosCtrl %<>%
+  select(-c(well, row, column)) %>%
+  group_by(across(-c(time, contains("OD")))) %>%
+  nest()
+  
+```
+
+## Fitting Positive Controls
+
+### Fitting Controls
+
+```{r Data Modelling and Summary Statistics 4-HT Positive Controls}
+
+source("../Functions/Exponential_Fit.R")
+
+#fitting model and collecting coefficients
+
+ PosCtrl %<>%
+  #apply Zwietering model to the data
+  mutate(model = map(data, Exponential_Fit)) %>%
+  #Create summary of coefficients
+  mutate(summary = map(model, tidy)) %>%
+  #Get residuals for model that can be plotted on top in a ggplot object
+  mutate(augment = map(model, augment)) %>%
+  #Using Glance to get an idea of model fit 
+  mutate(model.fit = map(model, glance))
+
+```
+
+```{r plotting 4-HT controls, fig.height= 6, fig.width= 10}
+p <- PosCtrl %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = OD562)) + 
+  geom_point(size = 1.5) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Positive Controls") +
+  scale_x_continuous(limits=c(0, 17)) + 
+  scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(~Replicate) +
+Theme
+
+```
+
+```{r unnesting for boxplotting of 4-HT controls coefficients}
+
+PosCtrl %<>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+
+```
+
+## Investigating Difference in Growth Rate Between Positive Control Conditions
+
+```{r}
+#Creating a boxplot to compare the positive controls in different media conditions.
+#Do you notice anything...?
+ggbetweenstats(
+  data = PosCtrl,
+  x = Inducer,
+  y = estimate_mu
+)
+```
+
+```{r}
+#Seems to be a difference in maximum growth rate! Based on my T-test!
+#Therefore I need to proceed with caution and compare cultures to their respective positive controls.
+PosCtrl %>%
+  infer::t_test(formula = estimate_mu ~ Inducer,
+              order = c("DMSO", "4-HT"),
+              alternative = "two-sided")
+```
+
+## Calculating Starting Parameters for Conditions
+
+```{r}
+#I calculated the means for the positive controls by condition. You can use these parameters for the Zwietering_A.fit model if you want to threshold the max OD for your experimental trials!
+ 
+starting_parameters <- PosCtrl %>%
+  group_by(Plasmid,Inducer) %>%
+  summarize(avg.estimate_A = mean(estimate_A),
+            avg.estimate_mu = mean(estimate_mu),
+            avg.estimate_lambda = mean(estimate_lambda),)
+
+starting_parameters
+
+HT_param <- starting_parameters %>%
+  slice(1) 
+ 
+DMSO_param <- starting_parameters %>%
+  slice(2)
+
+```
+
+## Analyzing Variant Model Coefficients
+
+```{r combining growth variant data frames, eval=FALSE, include=FALSE}
+
+#this code chunk could be useful for comparing coefficients between groups! I currently have it not running but you can remove the eval=FALSE to run it!
+fitted_growth_variants <- positive_controls %>%
+  select(!c(estimate_A, std.error_A, statistic_A, p.value_A)) %>%
+  full_join(Growth_4HT_Variants) %>%
+  full_join(Growth_DMSO_Variants)
+
+fitted_growth_variants %<>%
+  select(!model) %>%
+  modify_if(is.character, as.factor) %>%
+ungroup() %>%
+  mutate(Plasmid = Plasmid %>%
+           fct_relevel("+SIR")
+         )
+
+rm(positive_controls); rm(Growth_4HT_Variants); rm(Growth_DMSO)
+```
+
