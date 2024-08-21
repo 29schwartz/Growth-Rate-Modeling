@@ -9,7 +9,7 @@ Exponential <- function(a, r, time){
 
 
 Exponential_Fit <- function(.data) {
-  start_values <- c(a = .001, r = 4)
+  start_values <- c(a = .001, r = 5)
   nls(.data$OD562 ~ Exponential(a,r,time), data = .data,
       start = start_values,
       lower  = c(0,0),
