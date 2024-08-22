@@ -152,7 +152,7 @@ source("../Functions/Exponential_Fit.R")
   ggplot(aes(x = time, y = OD562)) + 
   geom_point(size = 2) + 
   geom_line(aes(y = .fitted, group = Replicate), color = "blue", size = 1) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Exponential Fit") +
+  labs(y = 'Absorbance ('~OD[562]~')', x = "Timepoint (Hr)", title = "Exponential Fit") +
   scale_x_continuous(limits=c(0, 3)) + 
   scale_y_continuous(limits=c(0, 3)) +
   facet_wrap(~Plasmid) +
