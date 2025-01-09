@@ -137,9 +137,9 @@ The previous graphs were quick and dirty ways to quantify if the slopes were dif
 readydata %>%
   group_by(Strain, Plasmid, Condition, Replicate, Variant) %>%
   select(!c(Media,well, row, column)) %>%
+  filter(time > .1 & time < 1) %>%
   nest(time, SF7) -> nested_data
 ```
-
 
 ```{r}
 nested_data %<>%
@@ -154,19 +154,13 @@ nested_data %<>%
 ```
 
 ```{r}
-nested_data %>% 
-  filter(Plasmid == "ev" & Condition == "OD6.6" & Replicate == 1) -> bingbong
-```
-
-
-```{r}
-bingbong %>%
+nested_data %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = SF7)) + 
-  geom_point(size = .1) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  geom_point() + 
+  geom_line(aes(x = time, y = .fitted, color = Replicate), size = 1.25) +
   labs(y = "SF7 RFU", x = "Timepoint (Hr)") +
-  #facet_wrap(Plasmid ~ Condition) +
+  facet_wrap(Plasmid~Condition, ncol = 4) +
 Theme
 
 #Variant and plasmid are the same you need to get rid of one!
