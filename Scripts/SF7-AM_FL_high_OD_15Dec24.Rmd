@@ -1,0 +1,255 @@
+---
+title: "R Notebook"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+#Only install these packages one time! Then either delete this chunk or comment it out!
+# install.packages("devtools")
+# devtools::install_github("ucl-cssb/flopr")
+```
+
+```{r load and other packages}
+
+# Packages To Install -----------------------------------------------------
+source("../Functions/Load_Packages.R")
+```
+
+```{r load thematic elements}
+# thematic elements -----------------------------------------------------
+source("../Functions/SKS_Personal_Theme.R")
+```
+
+## Loading Data
+
+```{r}
+
+#using the flopr package to wrangle TECAN Spark data. See flopr on github for more info!
+#' @param data_csv needs to be the raw TECAN data in CSV form!
+#' @param layout_csv needs to be filled in according to the example layout.
+#'    you can add as many columns as you want BUT THE LAST COLUMN MUST BE named 'well' and have the position for each well such as 'A1'
+
+plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/SF7_Probe/15Dec24_highOD_SF7.csv",
+                                     layout_csv = "../Data/SF7_Probe/15Dec24_highOD_SF7_Metadata.csv",
+                                     timeseries = TRUE))
+
+#Change time if necessary! I am changing from seconds to hours!
+plate1 %<>%
+  mutate(across(time, ~.x / 3600)) %>%
+  modify_if(is.character, as.factor) %>% 
+  modify_at(c("Replicate"), as.factor)
+
+
+
+readydata <- plate1 %>%
+ # full_join(plate2) %>%
+  #Wrangling data to make plots more easy to read.
+  mutate(across(Plasmid, str_replace, 'pLW003', 'ev')) %>%
+  mutate(across(Plasmid, str_replace, 'pLW002', '+SIR')) %>%
+  mutate(Variant = Plasmid)
+  
+
+rm(plate1); #rm(plate2)
+```
+
+## Max and Min OD Graphs
+
+### Quick visualization of data
+
+```{r fig.height = 6, fig.width = 8}
+#example of plotting raw data! I am only going to plot positive controls for this example!
+
+readydata %>%
+  ggplot(aes(x = time, y = SF7, color = Condition)) +
+  geom_point(size = 2) + 
+  labs(title = "raw data", x = "Hours", y = "SF7 RFU") +
+  Theme
+
+```
+
+```{r}
+readydata %>%
+  group_by(Plasmid,Condition,time) %>%
+  summarise(mean_FL = mean(SF7),
+            SD_FL = sd(SF7)) -> data_summary
+```
+
+```{r, fig.height= 6, fig.width= 9}
+data_summary %>%
+  ggplot(aes(x = time, y = mean_FL, color = Condition)) +
+  geom_point(size = 3) +
+  geom_line(line_width = 3) +
+  geom_errorbar(aes(ymin=mean_FL-SD_FL, ymax=mean_FL+SD_FL), width=.2,
+                 position=position_dodge(0.05)) +
+  labs(x = "Time (Hr)", y = "SF7 RFU") +
+  facet_wrap(~Plasmid) +
+  Theme
+```
+
+
+```{r, fig.height= 10, fig.width= 12}
+readydata %>%
+  ggplot(aes(x = time, y = SF7, color = Replicate)) +
+  geom_point(size = 3) +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) + 
+  labs(x = "Time (Hr)", y = "SF7 RFU") +
+  facet_wrap(Plasmid~Condition, ncol = 4) +
+  Theme
+```
+Looks like there is no pattern between the different replicates which is good! There does to be a consistent bias in the data starting at approximately 2 hours. I am going to filter the data for that time!
+
+```{r fig.height = 6, fig.width= 9}
+
+readydata %>%
+  filter(time <= 2) %>%
+  ggplot(aes(x = time, y = SF7)) +
+  geom_point(size = 1.25, color = "#f0649a") +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) + 
+  labs(x = "Time (Hr)", y = "SF7 RFU") +
+  facet_wrap(Plasmid~Condition, ncol = 4) +
+  Theme
+
+```
+This looks good and the slopes where the SIR is present seem to all be approximately linear, especially as the optical density grows!
+
+```{r}
+plate1 %>%
+  group_by(Condition,time) %>%
+  mutate(deltaFL = SF7 - SF7[Plasmid == 'pLW003']) %>%
+  filter(Plasmid != "pLW003") %>%
+  summarise(mean_FL = mean(deltaFL),
+            SD_FL = sd(deltaFL)) -> delta_data_summary
+```
+
+```{r, fig.width = 12, fig.height = 6}
+hr3 <- delta_data_summary %>%
+  ggplot(aes(x = time, y = mean_FL, color = Condition)) +
+  geom_point(size = 3) +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) +
+  labs(x = "Time (Hr)", y = "SF7 RFU", subtitle = "Difference in fluorescence between plasmids") +
+  facet_wrap(~Condition) + 
+  Theme
+
+hr1 <- delta_data_summary %>%
+  ggplot(aes(x = time, y = mean_FL, color = Condition)) +
+  geom_point(size = 3) +
+  scale_x_continuous(limits = c(0,1)) +
+  scale_y_continuous(limits = c(0, 4000)) + 
+  labs(x = "Time (Hr)", y = "SF7 RFU", subtitle = "Difference in fluorescence between plasmids over 1 hour") +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) +
+  facet_wrap(~Condition) + 
+  Theme
+
+hr3 | hr1
+```
+
+```{r}
+#residual plot
+delta_data_summary %>%
+  filter(time < 1 & Condition == "OD4") -> ds1
+
+model1 <- lm(mean_FL ~ time, data = ds1)
+
+# Extract fitted values and residuals
+ds1$fitted <- model1$fitted.values
+ds1$residuals <- model1$residuals
+
+# Create residual plot
+ggplot(ds1, aes(x = fitted, y = residuals)) +
+  geom_point(color = "blue", size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residual Plot",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+### Tidy models Fitting
+
+```{r}
+library(tidymodels)
+```
+
+```{r}
+lm_mod <- linear_reg()
+
+lm_fit_full <- lm_mod %>%
+  fit(SF7 ~ time + Condition, data = plate1)
+```
+
+```{r}
+tidy(lm_fit_full)
+```
+
+```{r}
+library(dotwhisker)
+```
+
+```{r}
+tidy(lm_fit_full) %>%
+  dwplot(dot_args = list(size = 2, color = "black"),
+         whisker_args = list(color = "black"),
+         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
+```
+## Interaction term
+
+```{r}
+lm_mod <- linear_reg()
+
+lm_fit_interaction <- lm_mod %>%
+  fit(SF7 ~ time * Condition, data = plate1)
+```
+
+```{r}
+tidy(lm_fit_interaction)
+```
+
+This is likely going to be the best model although it is complicated!
+```{r}
+tidy(lm_fit_interaction) %>%
+  dwplot(dot_args = list(size = 2, color = "black"),
+         whisker_args = list(color = "black"),
+         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
+```
+
+## One Hour
+
+```{r}
+hr1_only <- plate1 %>%
+  filter(time <= 1)
+```
+
+```{r}
+lm_mod <- linear_reg()
+
+lm_fit_hr1 <- lm_mod %>%
+  fit(SF7 ~ time + Condition, data = hr1_only)
+```
+
+```{r}
+tidy(lm_fit_hr1)
+```
+
+```{r}
+tidy(lm_fit_hr1) %>%
+  dwplot(dot_args = list(size = 2, color = "black"),
+         whisker_args = list(color = "black"),
+         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
+```
+
+## ANCOVA
+
+```{r}
+library(rstatix)
+
+anova_test(data = plate1, formula = SF7 ~ time + Condition, type = 3, detailed = TRUE) # type 3 SS should be used in ANCOVA
+```
+
