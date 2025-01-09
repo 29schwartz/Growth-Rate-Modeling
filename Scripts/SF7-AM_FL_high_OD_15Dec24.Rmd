@@ -130,6 +130,7 @@ p / q
 This looks good and the slopes where the SIR is present seem to all be approximately linear, especially as the optical density grows! If I look at this data for only the first hour there is a large difference beteween the different slopes (11 data points). If I look at this at the thirty minute time scale, the slopes seem to become relatively indistinguishable between conditions. However, it's hard to tell if this is due to the conditions or because there is simply not enough data (only 7 points). I should retry this experiment for under and hour and take much for frequent time points. 
 
 #Fitting individual rates for boxplots
+
 The previous graphs were quick and dirty ways to quantify if the slopes were different between groups. Each replicate is a biological replicate and therefore requires it's own fitted line. The slope parameter can then be pulled out and placed into a boxplot! This could also be done by subtracting the 'ev' from the +SIR to get a difference between replicates! Let's calculate the slopes for all lines first and then we can subtract them and see how that changes!
 
 ```{r}
@@ -142,17 +143,35 @@ readydata %>%
 
 ```{r}
 nested_data %<>%
-  filter(grepl('SKS015|SKS024|SKS025', Plasmid)) %>%
-  #applying custom function to find slopes
-  mutate(slope = map(data, Slope_Determining)) %>%
   #fitting linear model
-  mutate(model = map(slope, function(df) lm(H2S_uM_start ~ start_time, data = df))) %>%
+  mutate(model = map(data, function(df) lm(SF7 ~ time, data = df))) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
   #Get residuals for model that can be plotted on top in a ggplot object
   mutate(augment = map(model, augment)) %>%
   #Using Glance to get an idea of model fit 
   mutate(model.fit = map(model, glance))
+```
+
+```{r}
+nested_data %>% 
+  filter(Plasmid == "ev" & Condition == "OD6.6" & Replicate == 1) -> bingbong
+```
+
+
+```{r}
+bingbong %>%
+  unnest(augment) %>%
+  ggplot(aes(x = time, y = SF7)) + 
+  geom_point(size = .1) + 
+  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
+  labs(y = "SF7 RFU", x = "Timepoint (Hr)") +
+  #facet_wrap(Plasmid ~ Condition) +
+Theme
+
+#Variant and plasmid are the same you need to get rid of one!
+
+#The .fitted lines are adding up or interfering somehow! Need to get rid of that !
 ```
 
 
