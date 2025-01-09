@@ -102,20 +102,32 @@ readydata %>%
 ```
 Looks like there is no pattern between the different replicates which is good! There does to be a consistent bias in the data starting at approximately 2 hours. I am going to filter the data for that time!
 
-```{r fig.height = 6, fig.width= 9}
+```{r fig.height = 10, fig.width= 10}
 
-readydata %>%
-  filter(time <= 2) %>%
+p <- readydata %>%
+  filter(time <= 1) %>%
   ggplot(aes(x = time, y = SF7)) +
   geom_point(size = 1.25, color = "#f0649a") +
   stat_smooth(method = "lm", se = FALSE, color = "black") +
   ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) + 
-  labs(x = "Time (Hr)", y = "SF7 RFU") +
+  labs(x = "Time (Hr)", y = "SF7 RFU", subtitle = "1hr") +
   facet_wrap(Plasmid~Condition, ncol = 4) +
   Theme
 
+q <- readydata %>%
+  filter(time <= .5) %>%
+  ggplot(aes(x = time, y = SF7)) +
+  geom_point(size = 1.25, color = "#f0649a") +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ggpubr::stat_regline_equation(label.y.npc = .1, label.x.npc = .1, color = "black", size = 5) + 
+  labs(x = "Time (Hr)", y = "SF7 RFU", subtitle = "30 min") +
+  facet_wrap(Plasmid~Condition, ncol = 4) +
+  Theme
+
+p / q
+
 ```
-This looks good and the slopes where the SIR is present seem to all be approximately linear, especially as the optical density grows!
+This looks good and the slopes where the SIR is present seem to all be approximately linear, especially as the optical density grows! If I look at this data for only the first hour there is a large difference beteween the different slopes (11 data points). If I look at this at the thirty minute time scale, the slopes seem to become relatively indistinguishable between conditions. However, it's hard to tell if this is due to the conditions or because there is simply not enough data (only 7 points). I should retry this experiment for under and hour and take much for frequent time points. 
 
 ```{r}
 plate1 %>%
