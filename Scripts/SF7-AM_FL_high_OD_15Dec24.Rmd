@@ -153,110 +153,31 @@ nested_data %<>%
   mutate(model.fit = map(model, glance))
 ```
 
-```{r}
+```{r fig.height = 6, fig.width = 9}
 nested_data %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = SF7)) + 
   geom_point() + 
+  #It's okay to change the x and y axis as long as you are in the same dataframe in this case. You are also changing the color of the global mapping and therefore you must include in the local aesthetic mapping to overwrite it!
   geom_line(aes(x = time, y = .fitted, color = Replicate), size = 1.25) +
   labs(y = "SF7 RFU", x = "Timepoint (Hr)") +
   facet_wrap(Plasmid~Condition, ncol = 4) +
 Theme
-
-#Variant and plasmid are the same you need to get rid of one!
-
-#The .fitted lines are adding up or interfering somehow! Need to get rid of that !
 ```
 
-
-
-## Residual Plots
+## Converting Data to Boxplots
 
 ```{r}
-#residual plot
-delta_data_summary %>%
-  filter(time < 1 & Condition == "OD4") -> ds1
-
-model1 <- lm(mean_FL ~ time, data = ds1)
-
-# Extract fitted values and residuals
-ds1$fitted <- model1$fitted.values
-ds1$residuals <- model1$residuals
-
-# Create residual plot
-ggplot(ds1, aes(x = fitted, y = residuals)) +
-  geom_point(color = "blue", size = 2) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-  labs(
-    title = "Residual Plot",
-    x = "Fitted Values",
-    y = "Residuals"
-  ) +
-  theme_minimal()
+nested_data %>%
+  unnest(summary) %>%
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value)) %>%
+  group_by(Condition) %>%
+  ggplot(aes(x = Condition, y = estimate_time, fill = Plasmid)) +
+  geom_boxplot() + 
+  geom_point(width = .4, position = position_dodge(width = .75), size = 1) +
+  scale_y_continuous(limits = c(0,4000)) +
+  labs(x = "Cell Concentration", y = "Slope coefficient") + 
+  Theme
+  
 ```
-
-
-```{r}
-library(dotwhisker)
-```
-
-```{r}
-tidy(lm_fit_full) %>%
-  dwplot(dot_args = list(size = 2, color = "black"),
-         whisker_args = list(color = "black"),
-         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
-```
-## Interaction term
-
-```{r}
-lm_mod <- linear_reg()
-
-lm_fit_interaction <- lm_mod %>%
-  fit(SF7 ~ time * Condition, data = plate1)
-```
-
-```{r}
-tidy(lm_fit_interaction)
-```
-
-This is likely going to be the best model although it is complicated!
-```{r}
-tidy(lm_fit_interaction) %>%
-  dwplot(dot_args = list(size = 2, color = "black"),
-         whisker_args = list(color = "black"),
-         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
-```
-
-## One Hour
-
-```{r}
-hr1_only <- plate1 %>%
-  filter(time <= 1)
-```
-
-```{r}
-lm_mod <- linear_reg()
-
-lm_fit_hr1 <- lm_mod %>%
-  fit(SF7 ~ time + Condition, data = hr1_only)
-```
-
-```{r}
-tidy(lm_fit_hr1)
-```
-
-```{r}
-tidy(lm_fit_hr1) %>%
-  dwplot(dot_args = list(size = 2, color = "black"),
-         whisker_args = list(color = "black"),
-         vline = geom_vline(xintercept = 0, color = "grey", linetype = 2))
-```
-
-## ANCOVA
-
-```{r}
-library(rstatix)
-
-anova_test(data = plate1, formula = SF7 ~ time + Condition, type = 3, detailed = TRUE) # type 3 SS should be used in ANCOVA
-```
-
+Wow these look great! I don't think I need to subtract the +SIR from the EV because I think there is such a dramatic difference at higher concentrations! I think this is the easiest way to show the data!
