@@ -180,4 +180,4 @@ nested_data %>%
   Theme
   
 ```
-Wow these look great! I don't think I need to subtract the +SIR from the EV because I think there is such a dramatic difference at higher concentrations! I think this is the easiest way to show the data!
+Wow these look great! I don't think I need to subtract the +SIR from the EV because I think there is such a dramatic difference at higher concentrations! I think this is the easiest way to show the data! Yay these look great! 
