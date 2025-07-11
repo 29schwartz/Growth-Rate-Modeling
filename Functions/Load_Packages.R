@@ -1,5 +1,6 @@
 #These are base packages I always use to run my code!
 required_Packages_Install <- c("patchwork",
+                               "devtools",
                                "latex2exp",
                                "splines",
                                "kableExtra",
@@ -21,3 +22,4 @@ for(Package in required_Packages_Install){
   }
   library(Package,character.only = TRUE)
 }
+
