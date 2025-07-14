@@ -26,5 +26,7 @@ for(Package in required_Packages_Install){
 if("flopr" %in% installed.packages()[,"Package"] == FALSE) {
   devtools::install_github("ucl-cssb/flopr") 
 } else {
-  print("flopR installed")
+  library(flopr)
+  print("flopR installed and loaded")
 }
+
