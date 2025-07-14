@@ -1,6 +1,6 @@
 #These are base packages I always use to run my code!
-required_Packages_Install <- c("patchwork",
-                               "devtools",
+required_Packages_Install <- c("devtools",
+                               "patchwork",
                                "latex2exp",
                                "splines",
                                "kableExtra",
@@ -8,7 +8,6 @@ required_Packages_Install <- c("patchwork",
                                "magrittr", 
                                "tidyverse",
                                "roxygen2",
-                               "flopr",
                                "tidymodels",
                                "ggstatsplot",
                                "ggthemes",
@@ -23,3 +22,9 @@ for(Package in required_Packages_Install){
   library(Package,character.only = TRUE)
 }
 
+
+if("flopr" %in% installed.packages()[,"Package"] == FALSE) {
+  devtools::install_github("ucl-cssb/flopr") 
+} else {
+  print("flopR installed")
+}
