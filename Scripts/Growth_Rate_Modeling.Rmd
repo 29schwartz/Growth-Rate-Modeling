@@ -67,15 +67,6 @@ readydata %>%
 ## Nesting Data
 
 ```{r}
-#For model fitting to work you need to exclude the death phase. The model cannot account for the drop in optical density following stationary.
-
-#Therefore, You have to decide when to filter the data so that it looks like a logistic curve! Use your positive control in complete media (if using M9C and M9sa) as a reference
-
-plate1 %<>%
-  filter(time < put_time_here)
-```
-
-```{r}
 #' @concept This is creating a nested data frame. The main difference between a nested data frame and grouped data frame is that for a grouped data frame, each row is an observation. For a nested data frame each row is a group of observations!
 
 #This will allow us to easily apply function/models across all the data available. 
@@ -85,37 +76,35 @@ plate1 %<>%
 
 #THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
 
-PosCtrl %<>%
+ plate1 %<>%
   select(-c(well, row, column)) %>%
   group_by(across(-c(time, contains("OD")))) %>%
   nest()
   
 ```
 
-## Fitting Positive Controls
+```{r}
+source("../Functions/Gompertz_nls.R")
 
-### Fitting 4-HT Positive Controls
+#Therefore, You have to decide when to filter the data so that it looks like a logistic curve! Use your positive control in complete media (if using M9C and M9sa) as a reference
 
-```{r Data Modelling and Summary Statistics 4-HT Positive Controls}
-
-source("../Functions/Zwietering_Fitting_Functions.R")
-
-#fitting model and collecting coefficients
-
- PosCtrl %<>%
-  #apply Zwietering model to the data
-  mutate(model = map(data, Zwietering.fit)) %>%
+by_variant %>%
+  #Can't have NAs in any of the columns!
+  nplyr::nest_drop_na(data) %>%
+  #You will have to adjust these parameters a bit to get fits, especially if you cells grew poorly! These are good starting estimates. 
+  mutate(model = pmap(list(data, A_par = 1.00, mu_par = .5, lambda_par = 5), gompertz_model)) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
   #Get residuals for model that can be plotted on top in a ggplot object
   mutate(augment = map(model, augment)) %>%
   #Using Glance to get an idea of model fit 
-  mutate(model.fit = map(model, glance)) 
-
+  mutate(model.fit = map(model, glance)) -> growth_variants
 ```
 
-```{r plotting 4-HT controls, fig.height= 6, fig.width= 10}
-PosCtrl %>%
+```{r, fig.height= 6, fig.width= 10}
+
+#Use this graph to look at the fits quickly to see if they look ok!
+growth_variants %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = OD600)) + 
   geom_point(size = 1.5) + 
@@ -128,74 +117,46 @@ Theme
 
 ```
 
-```{r unnesting for boxplotting of 4-HT controls coefficients}
+```{r}
+#this code chunk will create a new column that lists the predictions for the estimates as well as their standard deviations and P-values. 
 
-PosCtrl %<>%
+growth_variants%<>%
   unnest(summary) %>%
   pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
 
 ```
 
-## Investigating Difference in Growth Rate Between Positive Control Conditions
+#Plotting Fitted Estimates
 
-```{r}
-#Creating a boxplot to compare the positive controls in different media conditions.
-#Do you notice anything...?
-ggbetweenstats(
-  data = PosCtrl,
-  x = Inducer,
-  y = estimate_mu
-)
+```{r, warnings = FALSE}
+#This function will plot the estimate mu as a boxplot (you may want to use a scatter plot depending on the number of replicates)
+fitted_variants %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu, fill = RBS)) + 
+  geom_boxplot() +
+  facet_wrap(~Media) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 ```{r}
-#Seems to be a difference in maximum growth rate! Based on my T-test!
-#Therefore I need to proceed with caution and compare cultures to their respective positive controls.
-PosCtrl %>%
-  infer::t_test(formula = estimate_mu ~ Inducer,
-              order = c("DMSO", "4-HT"),
-              alternative = "two-sided")
-```
+#This code will take the growth rate of the sample in the incomplete media and calculate it as a percent of growth of that of the cells in the complete media!
 
-## Calculating Starting Parameters for Conditions
+#With the filter function, you want to end up filtering for the complete media!
+
+fitted_variants %>%
+  group_by(Plasmid, Replicate) %>%
+  mutate(difference = (estimate_mu - lag(estimate_mu, default = last(estimate_mu))) / estimate_mu) %>%
+  filter(Media == "M9C") -> mu_percent
+```
 
 ```{r}
-#I calculated the means for the positive controls by condition. You can use these parameters for the Zwietering_A.fit model if you want to threshold the max OD for your experimental trials!
- 
-starting_parameters <- PosCtrl %>%
-  group_by(Plasmid,Inducer) %>%
-  summarize(avg.estimate_A = mean(estimate_A),
-            avg.estimate_mu = mean(estimate_mu),
-            avg.estimate_lambda = mean(estimate_lambda),)
-
-starting_parameters
-
-HT_param <- starting_parameters %>%
-  slice(1) 
- 
-DMSO_param <- starting_parameters %>%
-  slice(2)
-
-```
-
-## Analyzing Variant Model Coefficients
-
-```{r combining growth variant data frames, eval=FALSE, include=FALSE}
-
-#this code chunk could be useful for comparing coefficients between groups! I currently have it not running but you can remove the eval=FALSE to run it!
-fitted_growth_variants <- positive_controls %>%
-  select(!c(estimate_A, std.error_A, statistic_A, p.value_A)) %>%
-  full_join(Growth_4HT_Variants) %>%
-  full_join(Growth_DMSO_Variants)
-
-fitted_growth_variants %<>%
-  select(!model) %>%
-  modify_if(is.character, as.factor) %>%
-ungroup() %>%
-  mutate(Plasmid = Plasmid %>%
-           fct_relevel("+SIR")
-         )
-
-rm(positive_controls); rm(Growth_4HT_Variants); rm(Growth_DMSO)
+#plotting this calculated percent!
+mu_percent %>%
+  ggplot(aes(x = Plasmid, y = estimate_mu)) + 
+  geom_boxplot(aes(fill = RBS )) +
+  facet_wrap(~Promoter, scales = "free_x") +
+  scale_y_continuous(limits = c(0,1)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
