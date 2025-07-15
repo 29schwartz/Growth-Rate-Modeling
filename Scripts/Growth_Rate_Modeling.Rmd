@@ -43,6 +43,9 @@ plate1 %>%
   mutate(across(time, ~.x / 3600)) %>%
   modify_if(is.character, as.factor) %>% 
   #This is critical so that R treats the replicates as a grouping and not as a number! If you don't have any replicates you can delete this line!
+  
+  # Add in this code chunk if you are normalizing by FL!
+  # mutate(FL_OD = FL / OD600 ) %>%
   modify_at(c("Replicate"), as.factor) -> readydata
 
 #Below are some other functions you may want to use just use the %>% operator as shown above if you want to change more things!
@@ -50,6 +53,16 @@ plate1 %>%
   #mutate(across(Plasmid, str_replace, 'pLW002', '+SIR')) %>%
   #mutate(Variant = Plasmid)
   
+```
+
+```{r}
+#This code chunk is for subtracting out the starting value for each well so that all growth curves start at 0.00
+
+plate1 %>%
+  group_by(row, column) %>% 
+  arrange(time) %>%
+  #The column here should be whatever column will be used for your growth curve fitting
+  mutate(blanked_OD600 = OD600 - first(OD600)) -> readydata
 ```
 
 ### Quick visualization of data
