@@ -8,19 +8,20 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```
 
 ```{r}
-#You have to run this entire code chunk everytime!
+#You have to run this entire code chunk every time you restart the script!
 getwd() -> working_directory
 setwd(working_directory) 
 
 # Packages To Install -----------------------------------------------------
 source("../Functions/Load_Packages.R")
 
-
 # thematic elements -----------------------------------------------------
 source("../Functions/SKS_Personal_Theme.R")
 ```
 
 ## Loading Data
+
+### Read this carefully!
 
 ```{r}
 
@@ -33,16 +34,16 @@ source("../Functions/SKS_Personal_Theme.R")
 
 #load install
 
-plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/Example_Data.csv",
-                                     layout_csv = "../Data/Metadata.csv",
+plate1 <- drop_na(flopr::spark_parse(data_csv = "../Data/KEDC_KGM_11July25.csv",
+                                     layout_csv = "../Data/KGM_Metadata_11July25.csv",
                                      timeseries = TRUE))
 
 #Change time if necessary! I am changing from seconds to hours! 
-plate1 %<>%
+plate1 %>%
   mutate(across(time, ~.x / 3600)) %>%
   modify_if(is.character, as.factor) %>% 
-  #This is critical so that R treats the replciates as a grouping and not as a number!
-  modify_at(c("Replicate"), as.factor)
+  #This is critical so that R treats the replicates as a grouping and not as a number! If you don't have any replicates you can delete this line!
+  modify_at(c("Replicate"), as.factor) -> readydata
 
 #Below are some other functions you may want to use just use the %>% operator as shown above if you want to change more things!
   #mutate(across(Plasmid, str_replace, 'pLW003', 'ev')) %>%
@@ -72,14 +73,13 @@ readydata %>%
 #This will allow us to easily apply function/models across all the data available. 
 #Using Tidymodels we can then easily organize the coefficients for our different models!
 
-#the across function allows for selecting specific columns! I want the default time column and I want any column that has the word OD in it in case someone uses multiple ODs for flourescent proteins! 
+#the across function allows for selecting specific columns! You always want the default 'time' column but you may want multiple features to be nested if you are measuring multiple absorbances. You can add or remove columns in the contain function as a string!
 
-#THIS WILL ONLY WORK IF YOUR OPTICAL DENSITY CHANNELS HAVE THE WORD OD IN THEM!
 
- plate1 %<>%
+ readydata %>%
   select(-c(well, row, column)) %>%
-  group_by(across(-c(time, contains("OD")))) %>%
-  nest()
+  group_by(across(-c(time, contains(c("OD", "GFP"))))) %>%
+  nest() -> by_variant
   
 ```
 
@@ -92,7 +92,7 @@ by_variant %>%
   #Can't have NAs in any of the columns!
   nplyr::nest_drop_na(data) %>%
   #You will have to adjust these parameters a bit to get fits, especially if you cells grew poorly! These are good starting estimates. 
-  mutate(model = pmap(list(data, A_par = 1.00, mu_par = .5, lambda_par = 5), gompertz_model)) %>%
+  mutate(model = pmap(list(data, A_par = 1.00, mu_par = .3, lambda_par = 3), gompertz.fit)) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
   #Get residuals for model that can be plotted on top in a ggplot object
@@ -101,28 +101,28 @@ by_variant %>%
   mutate(model.fit = map(model, glance)) -> growth_variants
 ```
 
-```{r, fig.height= 6, fig.width= 10}
+```{r, fig.height= 10, fig.width= 10}
 
 #Use this graph to look at the fits quickly to see if they look ok!
+
 growth_variants %>%
   unnest(augment) %>%
   ggplot(aes(x = time, y = OD600)) + 
   geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted), color = "blue", size = 1.25) +
-  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "4-HT Positive Controls") +
-  scale_x_continuous(limits=c(0, 17)) + 
-  scale_y_continuous(limits=c(0, 1.8)) +
-  facet_wrap(Plate ~ Replicate) +
-Theme
-
+  geom_line(aes(y = .fitted, color = Replicate), linewidth = 1) +
+  labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Growth Variants") +
+  #scale_x_continuous(limits=c(0, 12)) + 
+  #scale_y_continuous(limits=c(0, 1.8)) +
+  facet_wrap(Media ~ Plasmid) +
+  Theme
 ```
 
 ```{r}
-#this code chunk will create a new column that lists the predictions for the estimates as well as their standard deviations and P-values. 
+#this code chunk will create a new column that lists the predictions for the estimates as well as their standard deviations and P-values. It will make an estimate_mu column which is the most important feature we care about!
 
-growth_variants%<>%
+growth_variants %>%
   unnest(summary) %>%
-  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value))
+  pivot_wider(names_from = term, values_from = c(estimate, std.error, statistic,p.value)) -> fitted_variants
 
 ```
 
@@ -147,8 +147,7 @@ fitted_variants %>%
   mutate(percent_change = lesser_val / estimate_mu) -> mu_percent
 ```
 
-
-```{r}
+```{r mu percent plot}
 mu_percent %>%
   ggplot(aes(x = Plasmid, y = percent_change)) + 
   geom_boxplot(aes(fill = RBS )) +
