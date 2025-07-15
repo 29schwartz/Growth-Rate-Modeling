@@ -139,24 +139,22 @@ fitted_variants %>%
 ```
 
 ```{r}
-#This code will take the growth rate of the sample in the incomplete media and calculate it as a percent of growth of that of the cells in the complete media!
-
-#With the filter function, you want to end up filtering for the complete media!
-
+#This code chunk will calculate the change in growth rate of the cells in incomplete media relative to the complete media. 
 fitted_variants %>%
   group_by(Plasmid, Replicate) %>%
-  mutate(difference = (estimate_mu - lag(estimate_mu, default = last(estimate_mu))) / estimate_mu) %>%
-  filter(Media == "M9C") -> mu_percent
+  mutate(lesser_val = lead(estimate_mu)) %>%
+  drop_na() %>%
+  mutate(percent_change = lesser_val / estimate_mu) -> mu_percent
 ```
 
+
 ```{r}
-#plotting this calculated percent!
 mu_percent %>%
-  ggplot(aes(x = Plasmid, y = estimate_mu)) + 
+  ggplot(aes(x = Plasmid, y = percent_change)) + 
   geom_boxplot(aes(fill = RBS )) +
   facet_wrap(~Promoter, scales = "free_x") +
   scale_y_continuous(limits = c(0,1)) +
+  labs(x = "", y = "M9sa Growth Rate Relative to M9C") + 
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
-
