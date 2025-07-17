@@ -9,17 +9,14 @@ gompertz_model <- function(A, mu, lambda, time){
 
 
 
-#Select the two columns in the nested tibble you want to use for fitting
+#Selects the two columns in the nested tibble you want to use for fitting. You should always have the time column and then the growth_values column!
 select_nested <- function(df, ...) {
   cols <- enquos(...)  # capture column names
   df %>%
     mutate(nested_growth_data = map(nested_growth_data, ~ select(.x, !!!cols)))
 }
 
-
-
-
-
+#This is the actual fitting function that uses the growth_values and time as well as estimates for the different growth parameters. 
 gompertz.fit <- function(.data, A_par, mu_par, lambda_par, growth_column) {
   
   .data %>% dplyr::slice_max(growth_values, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
