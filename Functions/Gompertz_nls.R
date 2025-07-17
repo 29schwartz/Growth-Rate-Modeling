@@ -11,13 +11,13 @@ gompertz_model <- function(A, mu, lambda, time){
 
 gompertz.fit <- function(.data, A_par, mu_par, lambda_par) {
   
-  .data %>% dplyr::slice_max(OD600, n = 5) %>% pull(time) %>% mean() -> time_of_max_OD
+  .data %>% dplyr::slice_max(blanked_OD600, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
   
-  .data %>% filter(time <= (time_of_max_OD + 1)) -> GC
+  .data %>% filter(time <= (time_of_max_val + 3)) -> GC
   
   start_values <- c(A = A_par, mu = mu_par, lambda = lambda_par)
   
-  nls(GC$OD600 ~ gompertz_model(A,mu,lambda,time), data = GC,
+  nls(GC$blanked_OD600 ~ gompertz_model(A,mu,lambda,time), data = GC,
       start = start_values,
       lower  = c(0,0,0),
       upper = c(1.8,1.5,22),

@@ -43,6 +43,9 @@ plate1 %>%
   mutate(across(time, ~.x / 3600)) %>%
   modify_if(is.character, as.factor) %>% 
   #This is critical so that R treats the replicates as a grouping and not as a number! If you don't have any replicates you can delete this line!
+  
+  # Add in this code chunk if you are normalizing by FL!
+  # mutate(FL_OD = FL / OD600 ) %>%
   modify_at(c("Replicate"), as.factor) -> readydata
 
 #Below are some other functions you may want to use just use the %>% operator as shown above if you want to change more things!
@@ -52,13 +55,23 @@ plate1 %>%
   
 ```
 
+```{r}
+#This code chunk is for subtracting out the starting value for each well so that all growth curves start at 0.00. This will vastly improve the growth curve fits!
+
+readydata %<>%
+  group_by(row, column) %>% 
+  arrange(time) %>%
+  #The column here should be whatever column will be used for your growth curve fitting
+  mutate(blanked_OD600 = OD600 - first(OD600))
+```
+
 ### Quick visualization of data
 
 ```{r fig.width= 6, fig.height= 6}
 readydata %>%
   #For better visualization you may want to filter out timepoints
   #filter(time <= 15) %>%
-  ggplot(aes(x = time, y = OD600, color = Media)) + 
+  ggplot(aes(x = time, y = blanked_OD600, color = Media)) + 
   geom_point() +
   #This allows you to split a single plot with many lines into individual plots based on a feature 
   facet_wrap(~Plasmid)+
@@ -79,20 +92,20 @@ readydata %>%
  readydata %>%
   select(-c(well, row, column)) %>%
   group_by(across(-c(time, contains(c("OD", "GFP"))))) %>%
-  nest() -> by_variant
+  nest(.key = "nested_growth_data") -> by_variant
   
 ```
 
 ```{r}
 source("../Functions/Gompertz_nls.R")
 
-#Therefore, You have to decide when to filter the data so that it looks like a logistic curve! Use your positive control in complete media (if using M9C and M9sa) as a reference
+#My function will take your normalized growth curve data (1st point is at 0.00) and find the maximum OD600 values, take an hour or two past that and then fit the data. If you filter the data immediately at the OD maximum it will not fit properly! 
 
 by_variant %>%
   #Can't have NAs in any of the columns!
-  nplyr::nest_drop_na(data) %>%
+  nplyr::nest_drop_na(nested_growth_data) %>%
   #You will have to adjust these parameters a bit to get fits, especially if you cells grew poorly! These are good starting estimates. 
-  mutate(model = pmap(list(data, A_par = 1.00, mu_par = .3, lambda_par = 3), gompertz.fit)) %>%
+  mutate(model = pmap(list(.data = nested_growth_data, A_par = 1.00, mu_par = .3, lambda_par = 3), gompertz.fit)) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
   #Get residuals for model that can be plotted on top in a ggplot object
@@ -107,9 +120,9 @@ by_variant %>%
 
 growth_variants %>%
   unnest(augment) %>%
-  ggplot(aes(x = time, y = OD600)) + 
+  ggplot(aes(x = time, y = blanked_OD600)) + 
   geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted, color = Replicate), linewidth = 1) +
+  geom_point(aes(y = .fitted, color = Replicate), linewidth = 1.25) +
   labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Growth Variants") +
   #scale_x_continuous(limits=c(0, 12)) + 
   #scale_y_continuous(limits=c(0, 1.8)) +
