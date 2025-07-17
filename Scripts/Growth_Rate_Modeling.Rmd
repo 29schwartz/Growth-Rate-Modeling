@@ -56,13 +56,13 @@ plate1 %>%
 ```
 
 ```{r}
-#This code chunk is for subtracting out the starting value for each well so that all growth curves start at 0.00
+#This code chunk is for subtracting out the starting value for each well so that all growth curves start at 0.00. This will vastly improve the growth curve fits!
 
-plate1 %>%
+readydata %<>%
   group_by(row, column) %>% 
   arrange(time) %>%
   #The column here should be whatever column will be used for your growth curve fitting
-  mutate(blanked_OD600 = OD600 - first(OD600)) -> readydata
+  mutate(blanked_OD600 = OD600 - first(OD600))
 ```
 
 ### Quick visualization of data
@@ -71,7 +71,7 @@ plate1 %>%
 readydata %>%
   #For better visualization you may want to filter out timepoints
   #filter(time <= 15) %>%
-  ggplot(aes(x = time, y = OD600, color = Media)) + 
+  ggplot(aes(x = time, y = blanked_OD600, color = Media)) + 
   geom_point() +
   #This allows you to split a single plot with many lines into individual plots based on a feature 
   facet_wrap(~Plasmid)+
@@ -99,7 +99,7 @@ readydata %>%
 ```{r}
 source("../Functions/Gompertz_nls.R")
 
-#Therefore, You have to decide when to filter the data so that it looks like a logistic curve! Use your positive control in complete media (if using M9C and M9sa) as a reference
+#My function will take your normalized growth curve data (1st point is at 0.00) and find the maximum OD600 values, take an hour or two past that and then fit the data. If you filter the data immediately at the OD maximum it will not fit properly! 
 
 by_variant %>%
   #Can't have NAs in any of the columns!
@@ -120,9 +120,9 @@ by_variant %>%
 
 growth_variants %>%
   unnest(augment) %>%
-  ggplot(aes(x = time, y = OD600)) + 
+  ggplot(aes(x = time, y = blanked_OD600)) + 
   geom_point(size = 1.5) + 
-  geom_line(aes(y = .fitted, color = Replicate), linewidth = 1) +
+  geom_point(aes(y = .fitted, color = Replicate), linewidth = 1.25) +
   labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Growth Variants") +
   #scale_x_continuous(limits=c(0, 12)) + 
   #scale_y_continuous(limits=c(0, 1.8)) +
