@@ -92,7 +92,7 @@ readydata %>%
  readydata %>%
   select(-c(well, row, column)) %>%
   group_by(across(-c(time, contains(c("OD", "GFP"))))) %>%
-  nest() -> by_variant
+  nest(.key = "nested_growth_data") -> by_variant
   
 ```
 
@@ -103,9 +103,9 @@ source("../Functions/Gompertz_nls.R")
 
 by_variant %>%
   #Can't have NAs in any of the columns!
-  nplyr::nest_drop_na(data) %>%
+  nplyr::nest_drop_na(nested_growth_data) %>%
   #You will have to adjust these parameters a bit to get fits, especially if you cells grew poorly! These are good starting estimates. 
-  mutate(model = pmap(list(data, A_par = 1.00, mu_par = .3, lambda_par = 3), gompertz.fit)) %>%
+  mutate(model = pmap(list(.data = nested_growth_data, A_par = 1.00, mu_par = .3, lambda_par = 3), gompertz.fit)) %>%
   #Create summary of coefficients
   mutate(summary = map(model, tidy)) %>%
   #Get residuals for model that can be plotted on top in a ggplot object
