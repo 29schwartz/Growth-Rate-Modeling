@@ -61,8 +61,8 @@ plate1 %>%
 readydata %<>%
   group_by(row, column) %>% 
   arrange(time) %>%
-  #The column here should be whatever column will be used for your growth curve fitting
-  mutate(blanked_OD600 = OD600 - first(OD600))
+  #THE VALUES YOU WANT GROWTH CURVE FITS MUST BE CALLED 'growth_values'!
+  mutate(growth_values = OD600 - first(OD600))
 ```
 
 ### Quick visualization of data
@@ -71,7 +71,7 @@ readydata %<>%
 readydata %>%
   #For better visualization you may want to filter out timepoints
   #filter(time <= 15) %>%
-  ggplot(aes(x = time, y = blanked_OD600, color = Media)) + 
+  ggplot(aes(x = time, y = growth_values, color = Media)) + 
   geom_point() +
   #This allows you to split a single plot with many lines into individual plots based on a feature 
   facet_wrap(~Plasmid)+
@@ -88,18 +88,21 @@ readydata %>%
 
 #the across function allows for selecting specific columns! You always want the default 'time' column but you may want multiple features to be nested if you are measuring multiple absorbances. You can add or remove columns in the contain function as a string!
 
+source("../Functions/Gompertz_nls.R")
 
  readydata %>%
   select(-c(well, row, column)) %>%
-  group_by(across(-c(time, contains(c("OD", "GFP"))))) %>%
+  group_by_if(is.factor) %>%
   nest(.key = "nested_growth_data") -> by_variant
-  
 ```
 
 ```{r}
-source("../Functions/Gompertz_nls.R")
+
+by_variant %<>% select_nested(time, growth_values)
 
 #My function will take your normalized growth curve data (1st point is at 0.00) and find the maximum OD600 values, take an hour or two past that and then fit the data. If you filter the data immediately at the OD maximum it will not fit properly! 
+
+#filter out the columns you want to fit. Always include time and your second named column should be called growth_values!
 
 by_variant %>%
   #Can't have NAs in any of the columns!
@@ -120,7 +123,7 @@ by_variant %>%
 
 growth_variants %>%
   unnest(augment) %>%
-  ggplot(aes(x = time, y = blanked_OD600)) + 
+  ggplot(aes(x = time, y = growth_values)) + 
   geom_point(size = 1.5) + 
   geom_point(aes(y = .fitted, color = Replicate), linewidth = 1.25) +
   labs(y = 'Absorbance ('~OD[600]~')', x = "Timepoint (Hr)", title = "Growth Variants") +

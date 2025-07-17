@@ -7,17 +7,25 @@ gompertz_model <- function(A, mu, lambda, time){
   A * exp(-exp(-mu * (time - lambda)))
 }
 
-## Gompertz NLS fitting function
 
-gompertz.fit <- function(.data, A_par, mu_par, lambda_par) {
+
+#Selects the two columns in the nested tibble you want to use for fitting. You should always have the time column and then the growth_values column!
+select_nested <- function(df, ...) {
+  cols <- enquos(...)  # capture column names
+  df %>%
+    mutate(nested_growth_data = map(nested_growth_data, ~ select(.x, !!!cols)))
+}
+
+#This is the actual fitting function that uses the growth_values and time as well as estimates for the different growth parameters. 
+gompertz.fit <- function(.data, A_par, mu_par, lambda_par, growth_column) {
   
-  .data %>% dplyr::slice_max(blanked_OD600, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
+  .data %>% dplyr::slice_max(growth_values, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
   
   .data %>% filter(time <= (time_of_max_val + 3)) -> GC
   
   start_values <- c(A = A_par, mu = mu_par, lambda = lambda_par)
   
-  nls(GC$blanked_OD600 ~ gompertz_model(A,mu,lambda,time), data = GC,
+  nls(GC$growth_values ~ gompertz_model(A,mu,lambda,time), data = GC,
       start = start_values,
       lower  = c(0,0,0),
       upper = c(1.8,1.5,22),
