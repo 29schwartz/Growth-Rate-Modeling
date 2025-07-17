@@ -7,11 +7,28 @@ gompertz_model <- function(A, mu, lambda, time){
   A * exp(-exp(-mu * (time - lambda)))
 }
 
+#This function will select the column that you want to fit! 
+select_nested <- function(df, ...) {
+  cols <- enquos(...)  # capture column names
+  df %>%
+    mutate(data = map(data, ~ select(.x, !!!cols)))
+}
+
+
 ## Gompertz NLS fitting function
 
-gompertz.fit <- function(.data, A_par, mu_par, lambda_par) {
+gompertz.fit <- function(.data, A_par, mu_par, lambda_par, time, growth_val) {
   
-  .data %>% dplyr::slice_max(blanked_OD600, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
+#this will select the columns you want to fit!
+  time_value <- enquo(time)
+  growth_value <- enquo(growth_value)
+  
+  .data %>%
+      mutate(.data = map(data ~ select(.x, !!time_value, !!growth_value)))
+  
+  
+  
+  .data %>% dplyr::slice_max(!!growth_value, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
   
   .data %>% filter(time <= (time_of_max_val + 3)) -> GC
   
