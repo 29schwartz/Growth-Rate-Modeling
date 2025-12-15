@@ -2,14 +2,14 @@
 required_Packages_Install <- c("devtools",
                                "patchwork",
                                "latex2exp",
-                               "splines",
                                "kableExtra",
                                "ggpubr", 
-                               "magrittr", 
+                               "magrittr",
                                "tidyverse",
                                "roxygen2",
                                "tidymodels",
                                "ggstatsplot",
+                               "here",
                                "ggthemes",
                                "DescTools")
 
