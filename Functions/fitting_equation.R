@@ -33,20 +33,36 @@ select_nested <- function(df, ...) {
     mutate(nested_growth_data = map(nested_growth_data, ~ select(.x, !!!cols)))
 }
 
-#This is the actual fitting function that uses the growth_values and time as well as estimates for the different growth parameters. 
-zwietering.fit <- function(.data, A_par, mu_par, lambda_par, growth_column) {
+# Improved fitting function
+zwietering.fit <- function(.data, A_par, mu_par, lambda_par, 
+                           growth_column = "growth_values", 
+                           time_column = "time",
+                           lower_bounds = c(0, 0, 0),      # Sensible biological defaults
+                           upper_bounds = c(Inf, Inf, Inf), 
+                           trim_death_phase = TRUE) {      # Flag to remove death phase
   
-  .data %>% dplyr::slice_max(growth_values, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
-  
-  .data %>% filter(time <= (time_of_max_val)) -> GC
+  # Optional: Trim data after a prolonged stationary/death phase to protect 'A' estimate
+  if(trim_death_phase) {
+    # Find the time of the absolute maximum value
+    max_time <- .data[[time_column]][which.max(.data[[growth_column]])]
+    
+    # Keep data up to the max time, PLUS a small buffer to capture the plateau
+    # (Adjust the buffer multiplier based on your specific time scale)
+    buffer <- (max(.data[[time_column]]) - min(.data[[time_column]])) * 0.1 
+    .data <- .data %>% filter(!!sym(time_column) <= (max_time + buffer))
+  }
   
   start_values <- c(A = A_par, mu = mu_par, lambda = lambda_par)
   
-  nls(GC$growth_values ~ zwietering_model(A,mu,lambda,time), data = GC,
+  # Create a dynamic formula so 'growth_column' and 'time_column' arguments actually work
+  fit_formula <- as.formula(paste(growth_column, "~ zwietering_model(A, mu, lambda,", time_column, ")"))
+  
+  nls(formula = fit_formula, 
+      data = .data,
       start = start_values,
-      lower  = c(0,0,0),
-      upper = c(1.8,1.75,22),
-      control = list(maxiter = 500, tol = 1e-10, minFactor = 1e-10, warnOnly = TRUE),
+      lower  = lower_bounds,
+      upper = upper_bounds,
+      control = list(maxiter = 1000, tol = 1e-10, minFactor = 1e-10, warnOnly = TRUE),
       algorithm = "port",
-      trace = F)
+      trace = FALSE)
 }
