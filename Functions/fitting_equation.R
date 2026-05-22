@@ -42,7 +42,7 @@ zwietering.fit <- function(.data, A_par, mu_par, lambda_par, growth_column) {
   
   start_values <- c(A = A_par, mu = mu_par, lambda = lambda_par)
   
-  nls(GC$growth_values ~ gompertz_model(A,mu,lambda,time), data = GC,
+  nls(GC$growth_values ~ zwietering_model(A,mu,lambda,time), data = GC,
       start = start_values,
       lower  = c(0,0,0),
       upper = c(1.8,1.75,22),
