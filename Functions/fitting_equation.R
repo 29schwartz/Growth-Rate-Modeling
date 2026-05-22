@@ -38,7 +38,7 @@ zwietering.fit <- function(.data, A_par, mu_par, lambda_par, growth_column) {
   
   .data %>% dplyr::slice_max(growth_values, n = 5) %>% pull(time) %>% mean() -> time_of_max_val
   
-  .data %>% filter(time <= (time_of_max_val + 1)) -> GC
+  .data %>% filter(time <= (time_of_max_val)) -> GC
   
   start_values <- c(A = A_par, mu = mu_par, lambda = lambda_par)
   
