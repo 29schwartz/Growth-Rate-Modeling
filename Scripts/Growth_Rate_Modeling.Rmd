@@ -9,8 +9,12 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 ```{r}
 #You have to run this entire code chunk every time you restart the script!
-getwd() -> working_directory
-setwd(working_directory) 
+if(!require('here',character.only = TRUE)) { 
+    install.packages('here', dependencies=TRUE)
+}
+
+
+#here::i_am("Scripts/FPC_partner_testing/fpc_partner_tuning_1.Rmd") FILL THIS OUT WITH THE SCRIPT LOCATION!
 
 # Packages To Install -----------------------------------------------------
 source("../Functions/Load_Packages.R")
